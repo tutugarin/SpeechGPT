@@ -14,6 +14,3 @@ def get_dataset_iterator_example(n_rows: int = 100):
         row_id = hashlib.sha256(text.encode()).hexdigest()
         row = ExampleItem(id=row_id, text=text)
         yield row
-
-
-
