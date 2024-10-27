@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import Iterator, Optional
-import soundfile as sf
 from datasets import load_dataset
 
 
@@ -20,25 +19,29 @@ class CommonVoiceRuItem:
         age (Optional[str]): Возраст говорящего (если доступно).
         gender (Optional[str]): Пол говорящего (если доступно).
         accent (Optional[str]): Акцент говорящего (если доступно).
-        locale (str): Локаль (язык и регион), в которой была сделана запись.
+        locale (str): Локализация, в которой была сделана запись.
         segment (Optional[str]): Чаще всего пустая строка (если доступно).
         sampling_rate (int): Частота дискретизации аудиозаписи.
     """
-    client_id: str  
-    audio_path: str  
+    client_id: str
+    audio_path: str
     audio: Optional[bytes]
     duration: float
-    sentence: str   
-    up_votes: int   
-    down_votes: int 
-    age: Optional[str] 
+    sentence: str
+    up_votes: int
+    down_votes: int
+    age: Optional[str]
     gender: Optional[str]
-    accent: Optional[str] 
-    locale: str     
-    segment: Optional[str]  
-    sampling_rate: int 
+    accent: Optional[str]
+    locale: str
+    segment: Optional[str]
+    sampling_rate: int
 
-def get_dataset_iterator_common_voice_ru(token: str = "", load_audio: bool = False) -> Iterator[CommonVoiceRuItem]:
+
+def get_dataset_iterator_common_voice_ru(
+        token: str = "",
+        load_audio: bool = False
+) -> Iterator[CommonVoiceRuItem]:
     """
     Функция для загрузки датасета 'Common Voice' на русском языке и итерации по его записям.
     
@@ -59,14 +62,19 @@ def get_dataset_iterator_common_voice_ru(token: str = "", load_audio: bool = Fal
         raise ValueError("Token must be provided to access the dataset.")
 
     print("Начинаем загрузку датасета Common Voice...")
-    
+
     # Загружаем датасет
-    ds = load_dataset("mozilla-foundation/common_voice_17_0", "ru", trust_remote_code=True, split='train', token=token)
+    ds = load_dataset(
+        "mozilla-foundation/common_voice_17_0",
+        "ru",
+        trust_remote_code=True,
+        split='train',
+        token=token
+    )
 
     print("Загрузка датасета 'Common Voice' завершена.")
 
-    total_records = len(ds)
-    for record in ds:  
+    for record in ds:
         audio_array = record['audio']['array']
         audio_path = record['audio']['path']
         sampling_rate = record['audio']['sampling_rate']
@@ -79,10 +87,10 @@ def get_dataset_iterator_common_voice_ru(token: str = "", load_audio: bool = Fal
             sentence=record['sentence'],
             up_votes=record['up_votes'],
             down_votes=record['down_votes'],
-            age=record.get('age'), 
-            gender=record.get('gender'),  
-            accent=record.get('accent'), 
+            age=record.get('age'),
+            gender=record.get('gender'),
+            accent=record.get('accent'),
             locale=record['locale'],
             segment=record.get('segment'),
-            sampling_rate=sampling_rate 
+            sampling_rate=sampling_rate
         )
