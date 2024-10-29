@@ -9,7 +9,7 @@ class FSD50KItem:
     Атрибуты:
         index (int): Уникальный индекс аудиофайла в датасете.
         datasetname (str): Название датасета (обычно "FSD50K").
-        audio (str): Путь или идентификатор аудиофайла (можно загрузить как аудио).
+        audio (dict): Словарь вида {"path": "audio"}
         audio_len (float): Длительность аудиофайла в секундах.
         text (str): Текстовая метка или описание, связанное с аудио.
         raw_text (str): Сырые текстовые данные, связанные с записью аудио.
@@ -49,7 +49,7 @@ def get_dataset_iterator_fsd50k():
         yield FSD50KItem(
             index=item['index'],
             datasetname=item['datasetname'],
-            audio=item['audio'],  # Это может быть путь или идентификатор аудиофайла
+            audio=item['audio'],
             audio_len=item['audio_len'],
             text=item['text'],
             raw_text=item['raw_text']
