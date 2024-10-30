@@ -84,7 +84,6 @@ class SpeechInstructChatItem:
 
 def get_dataset_iterator_speechinstruct():
     print("Загружаем датасет 'SpeechInstructor'...")
-    # Загрузка датасета через библиотеку datasets
     ds = load_dataset("fnlp/SpeechInstruct")
     print("Датасет 'SpeechInstructor' был успешно загружен")
 
