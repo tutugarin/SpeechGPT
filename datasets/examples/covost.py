@@ -1,14 +1,11 @@
 import hashlib
-
-import pandas as pd
-import hashlib
 from dataclasses import dataclass
 from typing import Iterator
 
 @dataclass
 class DatasetItem:
     """Класс, представляющий элемент датасета."""
-    id: str
+    id: int
     path: str
     sentence: str
     translation: str
@@ -67,9 +64,8 @@ class CoVoST2Dataset:
                 translation = row[indices['translation']]
                 client_id = row[indices['client_id']]
                 
-                # Генерация уникального ID на основе sentence и translation
-                unique_text = f"{sentence} {translation}"
-                row_id = hashlib.sha256(unique_text.encode()).hexdigest()
+                # Используем номер строки как id
+                row_id = row_count
 
                 # Возвращаем элемент DatasetItem
                 yield DatasetItem(
@@ -81,6 +77,7 @@ class CoVoST2Dataset:
                 )
 
                 row_count += 1
+
 
 # file_paths = {
 #     'train': "covost_v2.en_de.train.tsv",
