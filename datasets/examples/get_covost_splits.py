@@ -9,7 +9,7 @@ import argparse
 import csv
 from pathlib import Path
 
-import pandas as pd
+import pandas as pd # pylint: disable=import-error
 
 
 XX_EN_LANGUAGES = {
@@ -61,8 +61,8 @@ def get_v1_split(df: pd.DataFrame, split: str):
 def get_v2_split(df: pd.DataFrame, split: str):
     if split == "train":
         return df[(df["split"] == split) | (df["split"] == f"{split}_covost")]
-    else:
-        return df[df["split"] == split]
+    
+    return df[df["split"] == split]
 
 
 def main():
