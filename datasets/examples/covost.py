@@ -38,7 +38,7 @@ class CoVoST2Dataset:
         with open(file_path, 'r', encoding='utf-8') as file:
             # Пропускаем заголовок и проверяем нужные колонки
             header = file.readline().strip().split('\t')
-            indices = {col: header.index(col) 
+            indices = {col: header.index(col)
                         for col in ['path', 'sentence', 'translation', 'client_id']}
 
             # Чтение строк с ограничением по n_rows
