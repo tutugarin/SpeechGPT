@@ -1,4 +1,3 @@
-import hashlib
 from dataclasses import dataclass
 from typing import Iterator
 
@@ -36,59 +35,21 @@ class CoVoST2Dataset:
         
         # Открываем файл и читаем построчно
         with open(file_path, 'r', encoding='utf-8') as file:
-            # Пропускаем заголовок
+            # Пропускаем заголовок и проверяем нужные колонки
             header = file.readline().strip().split('\t')
+            indices = {col: header.index(col) for col in ['path', 'sentence', 'translation', 'client_id']}
             
-            # Проверяем, что файл содержит нужные колонки
-            expected_columns = ['path', 'sentence', 'translation', 'client_id']
-            if not all(col in header for col in expected_columns):
-                raise ValueError(f"Файл {file_path} не содержит ожидаемых столбцов: {expected_columns}")
-
-            # Определяем индексы нужных колонок
-            indices = {col: header.index(col) for col in expected_columns}
-
-            # Счетчик строк
-            row_count = 0
-
             # Чтение строк с ограничением по n_rows
-            for line in file:
-                row = line.strip().split('\t')
-
-                # Ограничение по количеству строк, если задано
+            for row_count, line in enumerate(file):
                 if n_rows is not None and row_count >= n_rows:
                     break
 
                 # Получаем значения для каждой колонки
-                path = row[indices['path']]
-                sentence = row[indices['sentence']]
-                translation = row[indices['translation']]
-                client_id = row[indices['client_id']]
-                
-                # Используем номер строки как id
-                row_id = row_count
-
-                # Возвращаем элемент DatasetItem
+                row = line.strip().split('\t')
                 yield DatasetItem(
-                    id=row_id,
-                    path=path,
-                    sentence=sentence,
-                    translation=translation,
-                    client_id=client_id
+                    id=row_count,
+                    path=row[indices['path']],
+                    sentence=row[indices['sentence']],
+                    translation=row[indices['translation']],
+                    client_id=row[indices['client_id']]
                 )
-
-                row_count += 1
-
-
-# file_paths = {
-#     'train': "covost_v2.en_de.train.tsv",
-#     'dev': "covost_v2.en_de.dev.tsv",
-#     'test': "covost_v2.en_de.test.tsv"
-# }
-
-# dataset = CoVoST2Dataset(file_paths)
-
-# # Выбор типа датасета для итерации
-# dataset_type = 'train'  # Измените на 'dev' или 'test' при необходимости
-
-# for item in dataset.load_data(dataset_type, n_rows=1):
-#     print(item)
