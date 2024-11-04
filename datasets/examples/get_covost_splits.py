@@ -61,7 +61,6 @@ def get_v1_split(df: pd.DataFrame, split: str):
 def get_v2_split(df: pd.DataFrame, split: str):
     if split == "train":
         return df[(df["split"] == split) | (df["split"] == f"{split}_covost")]
-    
     return df[df["split"] == split]
 
 
