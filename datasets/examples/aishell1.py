@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from tqdm import tqdm
+from tqdm import tqdm   # pylint: disable=import-error
 from datasets import load_dataset
 
 
