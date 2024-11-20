@@ -32,7 +32,7 @@ class DummyDecoder(FairseqDecoder):
 
 @register_model("whisper-turbo")
 class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
-    def __init__(self, args):
+    def __init__(self, args, task):
         dummy_encoder = DummyEncoder(None)
         dummy_decoder = DummyDecoder(None)
         super().__init__(dummy_encoder, dummy_decoder)
@@ -43,12 +43,10 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
                 "\n\nOr to make local edits, install the submodule:"
                 "\n\n  git submodule update --init fairseq/models/huggingface/transformers"
             )
-        self.args = args
-        self.load_model(args)
+        self.load_model()
 
-    def load_model(self, args):
-        model_path = getattr(args, 'load_hf_whisper_from', '')
-        assert model_path, "Model path must be specified in --load-hf-whisper-from"
+    def load_model(self):
+        model_path = 'openai/whisper-large-v3-turbo'
         self.model = WhisperForConditionalGeneration.from_pretrained(model_path)
         self.processor = AutoProcessor.from_pretrained(model_path)
         self.config = self.model.config
@@ -61,17 +59,10 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
                             help='maximum target positions for the decoder')
 
     @classmethod
-    def build_model(cls, args, task):
-        default_architecture(args)
-        return cls(args)
+    def build_model(cls, args=None, task=None):
+        return cls(args, task)
 
-    def forward(
-        self,
-        src_tokens: Tensor,
-        tgt_tokens: Optional[Tensor] = None,
-        src_lengths: Optional[Tensor] = None,
-        incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
-    ):
+    def forward(self, src_tokens, src_lengths = None, prev_output_tokens = None, **kwargs):
         input_features = src_tokens
 
         if tgt_tokens is not None:
@@ -99,12 +90,12 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
     def generate(self, audio_tokens=None, text=False, skip_special_tokens=True, file=None, **kwargs):
         if audio_tokens is None and file is None:
             raise ValueError("audio_tokens or file must not be None")
-        
+
         if file is not None:
             audio_tokens = self.parse_waveform(file)
-            
+ 
         self.eval()
-        
+
         with torch.no_grad():
             generated_ids = self.model.generate(audio_tokens, **kwargs)
 
@@ -113,9 +104,6 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
 
         return self.processor.batch_decode(generated_ids, skip_special_tokens=skip_special_tokens)
 
-def default_architecture(args):
-    args.load_hf_whisper_from = getattr(args, 'load_hf_whisper_from', 'openai/whisper-large-v3-turbo')
-    args.generate_text = getattr(args, 'generate_text', False)
 
 if __name__ == "__main__":
     print("ok")
