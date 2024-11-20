@@ -1,9 +1,6 @@
 import logging
-from typing import Dict, Optional
 
 import soundfile as sf
-import torch
-from torch import Tensor
 from fairseq.models import (
     FairseqEncoderDecoderModel,
     register_model,
@@ -65,10 +62,10 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
     def forward(self, src_tokens, src_lengths = None, prev_output_tokens = None, **kwargs):
         input_features = src_tokens
 
-        if tgt_tokens is not None:
+        if prev_output_tokens is not None:
             outputs = self.model(
                 input_features=input_features,
-                decoder_input_ids=tgt_tokens,
+                decoder_input_ids=prev_output_tokens,
             )
             logits = outputs.logits
         else:
