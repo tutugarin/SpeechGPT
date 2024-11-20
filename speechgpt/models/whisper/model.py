@@ -23,17 +23,15 @@ logger = logging.getLogger(__name__)
 from fairseq.models import FairseqEncoder, FairseqDecoder
 
 
-# Костыль
+#костыль  
 class DummyEncoder(FairseqEncoder):
     def forward(self, *args, **kwargs):
         return None  # или возвращайте данные, если требуется.
 
-
-# Костыль
+#костыль  
 class DummyDecoder(FairseqDecoder):
     def forward(self, *args, **kwargs):
         return None
-
 
 @register_model("whisper-turbo")
 class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
@@ -50,11 +48,6 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
                 'fairseq/models/huggingface/transformers'
             )
         self.args = args
-
-        # Проверка аргумента audio_path
-        if not args.audio_path:
-            raise ValueError("The argument --audio-path must be specified and not empty.")
-
         self.load_model(args)
 
     def load_model(self, args):
@@ -68,8 +61,6 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
     def add_args(parser):
         parser.add_argument('--load-hf-whisper-from', type=str, default='',
                             help='load Hugging Face pretrained Whisper from path')
-        parser.add_argument('--audio-path', type=str, default='',
-                            help='Path to the audio file for processing')
         parser.add_argument('--max-target-positions', type=int,
                             help='maximum target positions for the decoder')
 
@@ -79,14 +70,14 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
         return cls(args)
 
     def forward(
-            self,
-            src_tokens: Tensor,
-            tgt_tokens: Optional[Tensor] = None,
-            src_lengths: Optional[Tensor] = None,
-            incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
+        self,
+        src_tokens: Tensor,
+        tgt_tokens: Optional[Tensor] = None,
+        src_lengths: Optional[Tensor] = None,
+        incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
     ):
-        input_features = src_tokens
-
+        input_features = src_tokens 
+        
         if tgt_tokens is not None:
             outputs = self.model(
                 input_features=input_features,
@@ -100,13 +91,21 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
                     input_features=input_features
                 )
             logits = generated_ids
-
+    
         batch_size = input_features.size(0)
         seq_len = input_features.size(1)
-
+        
+        # Dummy values for hidden states and cells (as Whisper doesn't have these)
+        # final_hiddens = torch.zeros(1, batch_size, self.config.d_model).to(input_features.device)
+        # final_cells = torch.zeros(1, batch_size, self.config.d_model).to(input_features.device)
+        # encoder_padding_mask = torch.zeros(seq_len, batch_size).to(input_features.device)
+    
         return tuple(
             (
                 logits,  # seq_len x batch x hidden (logits or other output)
+                # final_hiddens,  # Dummy hidden states
+                # final_cells,  # Dummy cell states
+                # encoder_padding_mask,  # Dummy padding mask
                 None,
                 None,
                 None
@@ -115,22 +114,24 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
 
     def parse_waveform(self, file: str, **kwargs):
         waveform, sampling_rate = sf.read(file)
-        waveform = torch.tensor(waveform).unsqueeze(0).float()
+        waveform = torch.tensor(waveform).unsqueeze(0).float() 
         inputs = self.processor(waveform.squeeze(0), sampling_rate=sampling_rate, return_tensors="pt")
         waveform = inputs['input_features']
-
+        
         return waveform
+
+
 
     def generate(self, audio_tokens=None, text=False, skip_special_tokens=True, file=None, **kwargs):
         if audio_tokens is None and file is None:
             raise Exception("audio_tokens or file must not be None")
-
+        
         if file is not None:
             waveform = self.parse_waveform(file)
             audio_tokens = waveform
-
+            
         self.eval()
-
+        
         with torch.no_grad():
             generated_ids = self.model.generate(audio_tokens, **kwargs)
 
@@ -139,8 +140,11 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
 
         return self.processor.batch_decode(generated_ids, skip_special_tokens)
 
-
 def default_architecture(args):
     args.load_hf_whisper_from = getattr(args, 'load_hf_whisper_from', 'openai/whisper-large-v3-turbo')
-    args.audio_path = getattr(args, 'audio_path', '')
     args.generate_text = getattr(args, 'generate_text', 'False')
+
+
+
+if __name__ == "__main__":
+    print("ok")
