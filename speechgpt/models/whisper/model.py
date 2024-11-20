@@ -1,6 +1,7 @@
 import logging
 
 import soundfile as sf
+import torch
 from fairseq.models import (
     FairseqEncoderDecoderModel,
     register_model,
