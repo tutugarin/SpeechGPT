@@ -1,6 +1,6 @@
-from fairseq.models import BaseFairseqModel, register_model
-from torch import Tensor
 from typing import Optional, Dict
+from torch import Tensor
+from fairseq.models import BaseFairseqModel, register_model
 
 from speechgpt.models.whisper.model import HuggingFaceWhisperModel
 # импортировать свою модель
@@ -47,8 +47,8 @@ class AsrLlmCascadeModel(BaseFairseqModel):
     def generate(self, input_tokens=None, text=False, skip_special_tokens=True, file=None, **kwargs):
 
         if input_tokens is None and file is None:
-            raise Exception("input_tokens or file must not be None")
-            
+            raise ValueError("input_tokens or file must not be None")
+
         whisper_output = self.asr.generate(input_tokens, text, skip_special_tokens, file, **kwargs)
         # добавть работу с моделью llm_output = self.llm(whisper_output, ...)
 
