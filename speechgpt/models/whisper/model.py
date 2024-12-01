@@ -101,7 +101,3 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
             return generated_ids
 
         return self.processor.batch_decode(generated_ids, skip_special_tokens=skip_special_tokens)
-
-
-if __name__ == "__main__":
-    print("ok")
