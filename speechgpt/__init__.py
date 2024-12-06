@@ -1,4 +1,4 @@
 from models import (
 	HuggingFaceWhisperModel,
-	HiggingFaceQwen2ForCausalLM,
+	HuggingFaceQwen2ForCausalLM,
 )

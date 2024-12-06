@@ -324,7 +324,7 @@ class Qwen2Decoder(FairseqDecoder):
 
 
 @register_model('speechgpt_qwen2_casual')
-class HiggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
+class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
     main_input_name = "input_ids"
     _supports_cache_class = False
     _tied_weights_keys = ["lm_head.weight"]

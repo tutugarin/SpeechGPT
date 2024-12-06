@@ -6,7 +6,5 @@ __pycache__/
 poetry.lock
 pyptoject.toml
 fairseq/
-models/llama/
-models/mistral/
-models/qwen/qwen2.py
 weights/
+speechgpt/models/qwen/qwen2.py

@@ -5,7 +5,7 @@ from transformers import AutoTokenizer
 from fairseq.models import BaseFairseqModel, register_model
 
 from speechgpt.models.whisper.model import HuggingFaceWhisperModel
-from speechgpt.models.qwen.model import HiggingFaceQwen2ForCausalLM
+from speechgpt.models.qwen.model import HuggingFaceQwen2ForCausalLM
 
 
 @register_model("asr-llm-cascade-model")
@@ -21,7 +21,7 @@ class AsrLlmCascadeModel(BaseFairseqModel):
 
     def load_models(self, args):
         self.asr = HuggingFaceWhisperModel.build_model(args, None)
-        self.llm = HiggingFaceQwen2ForCausalLM.build_model(args, None)
+        self.llm = HuggingFaceQwen2ForCausalLM.build_model(args, None)
         self.asr_processor = self.asr.processor
         self.llm_tokenizer = AutoTokenizer.from_pretrained(args.llm_config)
         self.llm_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
