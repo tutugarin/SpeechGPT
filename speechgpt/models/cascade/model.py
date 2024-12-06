@@ -1,14 +1,11 @@
-from typing import Optional, Dict
+import torch
 from torch import Tensor
+from typing import Optional, Dict
 from fairseq.models import BaseFairseqModel, register_model
 
 from speechgpt.models.whisper.model import HuggingFaceWhisperModel
-# импортировать свою модель
+from speechgpt.models.qwen.model import HuggingFaceQwen2ForCausalLM
 
-
-# класс для аргументов (возможно на будущее)
-class Args:
-    pass
 
 @register_model("asr-llm-cascade-model")
 class AsrLlmCascadeModel(BaseFairseqModel):
@@ -17,40 +14,69 @@ class AsrLlmCascadeModel(BaseFairseqModel):
         self.args = args
         self.asr = None
         self.llm = None
+        self.asr_processor = None
+        self.llm_tokenizer = None
         self.load_models(args)
 
     def load_models(self, args):
-        self.asr = HuggingFaceWhisperModel.build_model(Args, None)
-        # self.llm = добавить модель
+        self.asr = HuggingFaceWhisperModel.build_model(args, None)
+        self.llm = HuggingFaceQwen2ForCausalLM.build_model(args, None)
+        self.asr_processor = self.asr.processor
+        self.llm_tokenizer = self.llm.tokenizer
+        self.llm_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
     @classmethod
     def build_model(cls, args=None, task=None):
-        args = args or Args()
         return cls(args)
+
+    @staticmethod
+    def add_args(parser):
+        parser.add_argument('--asr_config', type=str, default='openai/whisper-large-v3-turbo')
+        parser.add_argument('--llm_config', type=str, default='Qwen/Qwen2-0.5B')
+        parser.add_argument('--local_asr_weights', type=str, default=None)
+        parser.add_argument('--local_llm_weights', type=str, default=None)
 
     def forward(
         self,
         src_tokens: Tensor,
         tgt_tokens: Optional[Tensor] = None,
-        src_lengths: Optional[Tensor] = None,
         incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
     ):
-        """Форвард пасс метод (может использоваться при обучения, но для генерации 
-        использовать generate"""
-        whisper_output = self.asr(src_tokens, tgt_tokens, src_lengths, incremental_state)
-        # добавть работу с моделью llm_output = self.llm(whisper_output, ...)
+        asr_output = self.asr(src_tokens, tgt_tokens, incremental_state)
+        # Linear?
+        # llm_output = self.llm(whisper_output, None, tgt_tokens)
+        return asr_output
 
-        # возвращать llm output
-        return whisper_output
-
-
-    def generate(self, input_tokens=None, text=False, skip_special_tokens=True, file=None, **kwargs):
-
+    @torch.no_grad()
+    def generate_from_asr(
+        self,
+        input_tokens=None,
+        text=False,
+        skip_special_tokens=True,
+        file=None,
+        **kwargs
+    ):
         if input_tokens is None and file is None:
-            raise ValueError("input_tokens or file must not be None")
+            raise Exception("input_tokens or file must not be None")
 
-        whisper_output = self.asr.generate(input_tokens, text, skip_special_tokens, file, **kwargs)
-        # добавть работу с моделью llm_output = self.llm(whisper_output, ...)
+        asr_output = self.asr.generate(input_tokens, text, skip_special_tokens, file, **kwargs)
+        return asr_output
 
-        # возвращать llm output
-        return whisper_output
+    @torch.no_grad()
+    def generate(
+        self,
+        input_tokens=None,
+        skip_special_tokens=True,
+        file=None,
+        **kwargs
+    ):
+        if input_tokens is None and file is None:
+            raise Exception("input_tokens or file must not be None")
+
+        text = True
+        asr_texts = self.asr.generate(input_tokens, text, skip_special_tokens, file, **kwargs)
+
+        llm_tok_outs = self.llm_tokenizer(asr_texts, padding=True, return_tensors="pt")
+        generate_ids = self.llm.generate(llm_tok_outs.input_ids, attention_mask=llm_tok_outs.attention_mask, **kwargs)
+        gen_texts = self.llm_tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        return gen_texts

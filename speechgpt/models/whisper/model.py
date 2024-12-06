@@ -18,19 +18,24 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
 # Заглушка для энкодера
 class DummyEncoder(FairseqEncoder):
     def forward(self, *args, **kwargs):
         return None
+
 
 # Заглушка для декодера
 class DummyDecoder(FairseqDecoder):
     def forward(self, *args, **kwargs):
         return None
 
+
+DEFAULT_ASR_WEIGHTS = "openai/whisper-large-v3-turbo"
+
 @register_model("whisper-turbo")
 class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
-    def __init__(self, args, task):
+    def __init__(self, args=None, task=None):
         dummy_encoder = DummyEncoder(None)
         dummy_decoder = DummyDecoder(None)
         super().__init__(dummy_encoder, dummy_decoder)
@@ -41,10 +46,14 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
                 "\n\nOr to make local edits, install the submodule:"
                 "\n\n  git submodule update --init fairseq/models/huggingface/transformers"
             )
-        self.load_model()
+        self.load_model(args)
 
-    def load_model(self):
-        model_path = 'openai/whisper-large-v3-turbo'
+    def load_model(self, args):
+        if args and args.asr_config:
+            model_path = args.asr_config
+        else:
+            model_path = DEFAULT_ASR_WEIGHTS
+
         self.model = WhisperForConditionalGeneration.from_pretrained(model_path)
         self.processor = AutoProcessor.from_pretrained(model_path)
         self.config = self.model.config
@@ -60,9 +69,9 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
     def build_model(cls, args=None, task=None):
         return cls(args, task)
 
-    def forward(self, src_tokens, src_lengths = None, prev_output_tokens = None, **kwargs):
+    def forward(self, src_tokens, src_lengths=None, prev_output_tokens=None, **kwargs):
         input_features = src_tokens
-
+        
         if prev_output_tokens is not None:
             outputs = self.model(
                 input_features=input_features,
