@@ -27,7 +27,6 @@ from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutpu
 class Qwen2Decoder(FairseqDecoder):
     """
     Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`Qwen2DecoderLayer`]
-
     Args:
         config: Qwen2Config
     """
