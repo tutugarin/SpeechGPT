@@ -1,7 +1,6 @@
 import torch
 from torch import Tensor
 from typing import Optional, Dict
-from transformers import AutoTokenizer
 from fairseq.models import BaseFairseqModel, register_model
 
 from speechgpt.models.whisper.model import HuggingFaceWhisperModel
@@ -23,7 +22,7 @@ class AsrLlmCascadeModel(BaseFairseqModel):
         self.asr = HuggingFaceWhisperModel.build_model(args, None)
         self.llm = HuggingFaceQwen2ForCausalLM.build_model(args, None)
         self.asr_processor = self.asr.processor
-        self.llm_tokenizer = AutoTokenizer.from_pretrained(args.llm_config)
+        self.llm_tokenizer = self.llm.tokenizer
         self.llm_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
     @classmethod

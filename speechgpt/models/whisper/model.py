@@ -18,15 +18,20 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
 # Заглушка для энкодера
 class DummyEncoder(FairseqEncoder):
     def forward(self, *args, **kwargs):
         return None
 
+
 # Заглушка для декодера
 class DummyDecoder(FairseqDecoder):
     def forward(self, *args, **kwargs):
         return None
+
+
+DEFAULT_ASR_WEIGHTS = "openai/whisper-large-v3-turbo"
 
 @register_model("whisper-turbo")
 class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
@@ -45,10 +50,10 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
         self.load_model(args)
 
     def load_model(self, args):
-        if args is None:
-            model_path = "openai/whisper-large-v3-turbo"
-        else:
+        if args and args.asr_config:
             model_path = args.asr_config
+        else:
+            model_path = DEFAULT_ASR_WEIGHTS
 
         self.model = WhisperForConditionalGeneration.from_pretrained(model_path)
         self.processor = AutoProcessor.from_pretrained(model_path)

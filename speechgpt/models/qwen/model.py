@@ -9,7 +9,7 @@ from fairseq.models import (
     FairseqLanguageModel,
 )
 
-from transformers import Qwen2Config
+from transformers import Qwen2Config, AutoTokenizer
 from transformers import GenerationMixin, GenerationConfig
 from transformers.models.qwen2.modeling_qwen2 import (
     Qwen2RMSNorm,
@@ -323,6 +323,8 @@ class Qwen2Decoder(FairseqDecoder):
         return causal_mask
 
 
+DEFAULT_LLM_WEIGHTS = "Qwen/Qwen2-0.5B"
+
 @register_model('speechgpt_qwen2_casual')
 class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
     main_input_name = "input_ids"
@@ -330,12 +332,18 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, args, task=None):
-        config = Qwen2Config.from_pretrained(args.llm_config)
+        if args and args.llm_config:
+            model_path = args.llm_config
+        else:
+            model_path = DEFAULT_LLM_WEIGHTS
+            
+        config = Qwen2Config.from_pretrained(model_path)
         super().__init__(Qwen2Decoder(config))  # init self.decoder
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.generation_config = GenerationConfig.from_model_config(config)
         self.config = config
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         self.device = torch.device("cpu")
 
         # Initialize weights and apply final processing
@@ -357,15 +365,18 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
 
     def load_model(self, args):
         # Более элегантного способа не нашел
-        if args.local_llm_weights is None:
+        if args and args.local_llm_weights:
+            state_dict = torch.load(args.local_llm_weights, weights_only=True)
+        else:
+            path = args.llm_config if args and not args.local_llm_weights else DEFAULT_LLM_WEIGHTS
+
             from transformers import Qwen2ForCausalLM
-            state_dict = Qwen2ForCausalLM.from_pretrained(args.llm_config).state_dict()
+            state_dict = Qwen2ForCausalLM.from_pretrained(path).state_dict()
             # меняем model на decoder т.к. Fairseq требует self.decoder вместо self.model в HF
             state_dict = OrderedDict([
                 (k.replace("model.", "decoder."), v) for k, v in state_dict.items()
             ])
-        else:
-            state_dict = torch.load(args.local_llm_weights, weights_only=True)
+
         self.load_state_dict(state_dict)
 
     def can_generate(self):

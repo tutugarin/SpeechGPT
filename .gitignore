@@ -3,8 +3,10 @@ __pycache__/
 .idea/
 .ipynb_checkpoints/
 .pylintrc
+.env
 poetry.lock
 pyptoject.toml
 fairseq/
 weights/
 speechgpt/models/qwen/qwen2.py
+audio_cache/
