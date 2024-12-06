@@ -2,3 +2,11 @@ __pycache__/
 .venv/
 .idea/
 .ipynb_checkpoints/
+.pylintrc
+poetry.lock
+pyptoject.toml
+fairseq/
+models/llama/
+models/mistral/
+models/qwen/qwen2.py
+weights/

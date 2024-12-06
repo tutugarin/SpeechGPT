@@ -19,3 +19,15 @@
 - Якунин Иван Вадимович (@pokemon_basmanny)
 - Лотц Никита Константинович (@nikitalotts)
 - Петров Олег Евгеньевич (@allwheelsdrive0)
+
+### Установка окружения
+
+Возможно придется запускать установку от имени администратора.
+
+```
+conda create --name speechgpt python=...
+conda activate speechgpt
+python -m install pip==24.0
+```
+
+Ставим именно `pip==24.0`, иначе не сможем установить `omegaconf==2.0.6`, нужное для установки `fairseq`.
