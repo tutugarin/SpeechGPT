@@ -46,7 +46,6 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
                 "\n\nOr to make local edits, install the submodule:"
                 "\n\n  git submodule update --init fairseq/models/huggingface/transformers"
             )
-
         self.load_model(args)
 
     def load_model(self, args):
@@ -72,7 +71,7 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
 
     def forward(self, src_tokens, src_lengths=None, prev_output_tokens=None, **kwargs):
         input_features = src_tokens
-
+        
         if prev_output_tokens is not None:
             outputs = self.model(
                 input_features=input_features,

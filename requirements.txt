@@ -8,3 +8,4 @@ omegaconf==2.0.6
 fairseq
 transformers
 datasets
+pylint
