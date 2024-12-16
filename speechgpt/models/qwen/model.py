@@ -325,7 +325,7 @@ class Qwen2Decoder(FairseqDecoder):
 
 DEFAULT_LLM_WEIGHTS = "Qwen/Qwen2-0.5B"
 
-@register_model('speechgpt_qwen2_casual')
+# @register_model('speechgpt_qwen2_casual')
 class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
     main_input_name = "input_ids"
     _supports_cache_class = False

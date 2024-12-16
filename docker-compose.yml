@@ -1,0 +1,32 @@
+version: '3'
+
+services:
+  speechgpt:
+    build: speechgpt/
+    ports: 
+      - 8000:8000
+    networks:
+      - deploy_network
+    container_name: speechgpt
+
+  streamlit:
+    build: streamlit/
+    depends_on:
+      - speechgpt
+    ports: 
+        - 8501:8501
+    networks:
+      - deploy_network
+    container_name: streamlit
+
+  bot:
+    build: bot/
+    depends_on:
+      - speechgpt
+    networks:
+      - deploy_network
+    container_name: bot
+
+networks:
+  deploy_network:
+    driver: bridge

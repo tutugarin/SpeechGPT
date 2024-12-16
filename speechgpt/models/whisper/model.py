@@ -33,7 +33,7 @@ class DummyDecoder(FairseqDecoder):
 
 DEFAULT_ASR_WEIGHTS = "openai/whisper-large-v3-turbo"
 
-@register_model("whisper-turbo")
+# @register_model("whisper-turbo")
 class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
     def __init__(self, args=None, task=None):
         dummy_encoder = DummyEncoder(None)
