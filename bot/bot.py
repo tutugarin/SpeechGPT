@@ -9,28 +9,25 @@ from aiogram import types
 from aiogram import Dispatcher
 from aiogram.filters import Command
 
-from speechgpt.models import AsrLlmCascadeModel
-
 
 os.makedirs("audio", exist_ok=True)
 dotenv.load_dotenv()
-bot = Bot(token=os.environ.get("BOT_TOKEN"))
+# bot = Bot(token=os.environ.get("BOT_TOKEN"))
+bot = Bot(token="REPLACE_ME")
 dp = Dispatcher()
-
-
-print("\nInitializing model...")
-model = AsrLlmCascadeModel.build_model()
-print("Model is running!\n")
 
 
 # Заглушка для вашей модели (замените на вызов вашей модели)
 def process_audio_with_model(wav_file: str) -> str:
     """На будущее: запрос к модели на другой машине"""
-    print(f"Processing {wav_file}...")
-    answ = model.generate(file=wav_file, max_new_tokens=64, top_p=0.95)[0]
-    answ = ". ".join(answ.split(". ")[:-1]) + "." # Обрезка до последнего завершенного предложения
-    print(f"Successfully processed {wav_file}")
-    return answ
+    # print(f"Processing {wav_file}...")
+    # answ = model.generate(file=wav_file, max_new_tokens=64, top_p=0.95)[0]
+    # answ = ". ".join(answ.split(". ")[:-1]) + "." # Обрезка до последнего завершенного предложения
+    # print(f"Successfully processed {wav_file}")
+
+
+    # отправлить запрос c аудио на POST "http://speechgpt:8000/predict" как FormData (ключ file)
+    return "result"
 
 
 async def download(file_id, save_name):
@@ -75,7 +72,7 @@ async def handle_audio(message: types.Message):
             result_text = process_audio_with_model(wave_name)
             await message.reply(result_text)
 
-            for name in set([save_name, wave_name])
+            for name in set([save_name, wave_name]):
                 os.remove(name)
         else:
             await message.reply("File error! Maybe you have sent something different from audio?")
