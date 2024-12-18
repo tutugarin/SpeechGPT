@@ -12,4 +12,6 @@ COPY . /speechgpt
 
 EXPOSE 8000
 
-CMD ["python3", "-m", "api.server"]
+WORKDIR /
+
+CMD ["python3", "-m", "speechgpt.api.server"]
