@@ -154,18 +154,14 @@ class ModelManager:
             file_path (str): The path to the file to predict.
         """
         try:
-            log.debug(f"start {file_path}")
             results = model.generate(file=file_path,
                                      logger=log,
                                          max_new_tokens=150,
                                          do_sample=True,
                                          top_k=50,
                                          top_p=0.95)
-
-            log.debug(f"finish {file_path}")
             response = results[0]
-            import datetime
-            result = ". ".join(response.split(". ")[:-1]) + f".{datetime.datetime.now().strftime('%H%M%S')}"
+            result = ". ".join(response.split(". ")[:-1]) + "."
 
             return result
         except Exception as e:
