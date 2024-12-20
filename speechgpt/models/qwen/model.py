@@ -23,6 +23,9 @@ from transformers.cache_utils import (
 from transformers.modeling_attn_mask_utils import AttentionMaskConverter
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 
+from speechgpt.logger import get_logger
+
+logger = get_logger()
 
 class Qwen2Decoder(FairseqDecoder):
     """
@@ -37,6 +40,7 @@ class Qwen2Decoder(FairseqDecoder):
         self.vocab_size = config.vocab_size
         self.config = config
 
+        logger.info(f"Initializing Qwen2Decoder with {config.num_hidden_layers} layers.")
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         self.layers = nn.ModuleList(
             [Qwen2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
@@ -48,6 +52,7 @@ class Qwen2Decoder(FairseqDecoder):
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
         # self.post_init()
+        logger.info("Qwen2Decoder initialized successfully.")
 
     @classmethod
     def build_model(cls, config):
@@ -171,6 +176,7 @@ class Qwen2Decoder(FairseqDecoder):
 
         if not return_dict:
             return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
+
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=next_cache,
@@ -291,6 +297,7 @@ class Qwen2Decoder(FairseqDecoder):
             past_key_values (`Cache`):
                 The cache class that is being used currently to generate
         """
+
         if attention_mask is not None and attention_mask.dim() == 4:
             # In this case we assume that the mask comes already in inverted form and requires no inversion or slicing.
             causal_mask = attention_mask
@@ -336,7 +343,8 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
             model_path = args.llm_config
         else:
             model_path = DEFAULT_LLM_WEIGHTS
-            
+
+        logger.info(f"Loading model from {model_path}")
         config = Qwen2Config.from_pretrained(model_path)
         super().__init__(Qwen2Decoder(config))  # init self.decoder
         self.vocab_size = config.vocab_size
@@ -348,13 +356,18 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
 
         # Initialize weights and apply final processing
         # self.post_init()
+
+        logger.info("Model initialized successfully.")
+
         self.load_model(args)
 
     @classmethod
     def build_model(cls, args, task=None):
+        logger.info(f"Building HuggingFaceQwen2ForCausalLM model.")
         return cls(args, task)
 
     def to(self, device):
+        logger.info(f"Moving model to device: {device}")
         if type(device) is str:
             self.device = torch.device(device)
         else:
@@ -364,7 +377,7 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
         return self
 
     def load_model(self, args):
-        # Более элегантного способа не нашел
+        logger.info("Loading model weights.")
         if args and args.local_llm_weights:
             state_dict = torch.load(args.local_llm_weights, weights_only=True)
         else:
@@ -376,6 +389,8 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
             state_dict = OrderedDict([
                 (k.replace("model.", "decoder."), v) for k, v in state_dict.items()
             ])
+
+        logger.info("Loaded model weights.")
 
         self.load_state_dict(state_dict)
 
@@ -431,10 +446,12 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
 
         loss = None
         if labels is not None:
+
             loss = self.loss_function(logits, labels, self.vocab_size, **loss_kwargs)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
+
             return (loss,) + output if loss is not None else output
 
         return CausalLMOutputWithPast(
