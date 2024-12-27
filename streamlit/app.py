@@ -29,7 +29,7 @@ try:
     if dataset_option == "FSD50K":
         logger.info("Загрузка FSD50K dataset...")
         ds = load_dataset("CLAPv2/FSD50K")['train']
-        df = pd.DataFrame(ds[:1000]) 
+        df = pd.DataFrame(ds)
         st.write("### EDA для FSD50K")
         st.write(df.head())
         logger.info(f"Размер данных FSD50K: {df.shape}")
@@ -39,15 +39,10 @@ try:
         st.plotly_chart(fig)
         logger.info("Гистограмма аудио длительности создана.")
 
-        fig = px.pie(df, names="text", title="Распределение текстов")
-        st.plotly_chart(fig)
-        logger.info("Круговая диаграмма текстов создана.")
-
     elif dataset_option == "AISHELL":
         logger.info("Загрузка AISHELL dataset...")
-        ds = load_dataset("DynamicSuperbPrivate/SpeakerVerification_Aishell1Train", streaming=True)
-        data = [item for _, item in zip(range(100), ds['train'])]
-        df = pd.DataFrame(data[:1000])
+        ds = load_dataset("DynamicSuperbPrivate/SpeakerVerification_Aishell1Train")['train']
+        df = pd.DataFrame(ds)
         st.write("### EDA для AISHELL")
         st.write(df.head())
         logger.info(f"Размер данных AISHELL: {df.shape}")
@@ -60,7 +55,7 @@ try:
     elif dataset_option == "Alpaca":
         logger.info("Загрузка Alpaca dataset...")
         ds = load_dataset("yahma/alpaca-cleaned")['train']
-        df = pd.DataFrame(ds[:1000]) 
+        df = pd.DataFrame(ds) 
         st.write("### EDA для Alpaca")
         st.write(df.head())
         logger.info(f"Размер данных Alpaca: {df.shape}")
@@ -73,7 +68,7 @@ try:
     elif dataset_option == "Audiocaps":
         logger.info("Загрузка Audiocaps dataset...")
         ds = load_dataset("d0rj/audiocaps")['train']
-        df = pd.DataFrame(ds[:1000])
+        df = pd.DataFrame(ds)
         st.write("### EDA для Audiocaps")
         st.write(df.head())
         logger.info(f"Размер данных Audiocaps: {df.shape}")
@@ -85,7 +80,7 @@ try:
 
     # Инференс семпла
     st.write("### Инференс семпла")
-    selected_sample = st.number_input("Выберите индекс семпла", min_value=0, max_value=999, step=1, value=0)
+    selected_sample = st.number_input("Выберите индекс семпла", min_value=0, step=1, value=0)
     if st.button("Инференс семпла"):
         sample = df.iloc[selected_sample]
         st.write("Выбранный семпл:", sample)
