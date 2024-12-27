@@ -39,7 +39,7 @@ try:
         st.plotly_chart(fig)
         logger.info("Гистограмма аудио длительности создана.")
 
-        fig = px.pie(df, names="text", title="Пример распределения текстов")
+        fig = px.pie(df, names="text", title="Распределение текстов")
         st.plotly_chart(fig)
         logger.info("Круговая диаграмма текстов создана.")
 
