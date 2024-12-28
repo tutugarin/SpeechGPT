@@ -1,18 +1,16 @@
 import asyncio
 import os
 import time
+import multiprocessing as mp
+from multiprocessing import Process
 from concurrent.futures import ProcessPoolExecutor
 from uuid import uuid4
 import soundfile as sf
-from logger import get_logger
-import multiprocessing as mp
-from multiprocessing import Queue, Process
-from models import get_cascade_model
-
 import torch.multiprocessing
+from speechgpt.logger import get_logger
+from speechgpt.models import get_cascade_model
 mp.set_start_method("spawn", force=True)
 torch.multiprocessing.set_sharing_strategy('file_descriptor')  # Альтернативная стратегия
-
 
 logger = get_logger()
 
@@ -83,8 +81,12 @@ class ModelManager:
             if os.path.exists(file_path):
                 os.remove(file_path)
                 logger.info("File deleted: %s", file_path)
-        except Exception as e:
-            logger.exception("Error deleting file: %s", file_path)
+        except FileNotFoundError:
+            logger.warning("File not found: %s", file_path)
+        except PermissionError:
+            logger.error("Permission denied while deleting file: %s", file_path)
+        except OSError as e:
+            logger.exception("OS error occurred while deleting file: %s. Exception: %s", file_path, e)
 
     def fit(self, X, y, *args, **kwargs):
         """
@@ -94,12 +96,14 @@ class ModelManager:
             X (list): The features.
             y (list): The labels.
         """
+        _ = X, y, args, kwargs # строка для того, чтобы не ругался pylint
         def training():
             time.sleep(5)
 
         process = Process(target=training)
         process.start()
         process.join()
+        return y # для того, чтобы не ругался pylint
 
     async def predict(self, file_path: str, **kwargs) -> str:
         """
@@ -117,7 +121,7 @@ class ModelManager:
             else:
                 result = self._run_prediction(logger, self.model, file_path, **kwargs)
             return result
-        except Exception as e:
+        except Exception as e: # pylint: disable=broad-except
             logger.exception("Error making prediction: %s", e)
 
     async def _run_parallel_prediction(self, file_path: str, **kwargs) -> str:
@@ -141,7 +145,7 @@ class ModelManager:
             **kwargs
         )
 
-        logger.info(f"Prediction task started for {file_path}")
+        logger.info("Prediction task started for %s", file_path)
 
         return result
 
@@ -153,6 +157,7 @@ class ModelManager:
         Parameters:
             file_path (str): The path to the file to predict.
         """
+        _ = kwargs
         try:
             results = model.generate(file=file_path,
                                      logger=log,

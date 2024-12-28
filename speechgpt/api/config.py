@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     temp_dir: str = os.getenv("TEMP_DIR", "./temp")
     num_cores: int = int(os.getenv("NUM_CORES", "4"))
     max_file_size: int = int(os.getenv("MAX_FILE_SIZE", f"{10 * 1024 * 1024}"))
-    parallel: bool = (os.getenv('PARALLEL', 'False') == 'True')
+    parallel: bool = os.getenv('PARALLEL', 'False') == 'True'
 
 try:
     settings = Settings()

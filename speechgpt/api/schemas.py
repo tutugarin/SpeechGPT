@@ -1,6 +1,5 @@
+from typing import List, Dict, Any
 from pydantic import BaseModel
-from typing import List, Dict, Optional, Any, Union
-
 
 class ModelConfig(BaseModel):
     """Configuration for the model."""
