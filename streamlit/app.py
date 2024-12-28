@@ -60,7 +60,7 @@ try:
         st.write(df.head())
         logger.info(f"Размер данных Alpaca: {df.shape}")
 
-        # Графики
+        # Графики 
         fig = px.histogram(df, x="instruction", title="Распределение инструкций")
         st.plotly_chart(fig)
         logger.info("Гистограмма инструкций создана.")
