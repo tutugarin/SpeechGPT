@@ -1,12 +1,12 @@
-import streamlit as st
+import logging
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 from datasets import load_dataset
-import logging
 
 # Настройка логирования
 logging.basicConfig(
-    filename="app.log", 
+    filename="app.log",
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
@@ -23,7 +23,7 @@ dataset_option = st.selectbox(
     "Выберите датасет для анализа",
     ("FSD50K", "AISHELL", "Alpaca", "Audiocaps")
 )
-logger.info(f"Выбран датасет: {dataset_option}")
+logger.info("Выбран датасет: %s", dataset_option)
 
 try:
     if dataset_option == "FSD50K":
@@ -32,7 +32,7 @@ try:
         df = pd.DataFrame(ds)
         st.write("### EDA для FSD50K")
         st.write(df.head())
-        logger.info(f"Размер данных FSD50K: {df.shape}")
+        logger.info("Размер данных FSD50K: %s", df.shape)
 
         # Графики
         fig = px.histogram(df, x="audio_len", title="Распределение длительности аудио")
@@ -45,7 +45,7 @@ try:
         df = pd.DataFrame(ds)
         st.write("### EDA для AISHELL")
         st.write(df.head())
-        logger.info(f"Размер данных AISHELL: {df.shape}")
+        logger.info("Размер данных AISHELL: %s", df.shape)
 
         # Графики
         fig = px.histogram(df, x="label", title="Распределение меток")
@@ -55,12 +55,12 @@ try:
     elif dataset_option == "Alpaca":
         logger.info("Загрузка Alpaca dataset...")
         ds = load_dataset("yahma/alpaca-cleaned")['train']
-        df = pd.DataFrame(ds) 
+        df = pd.DataFrame(ds)
         st.write("### EDA для Alpaca")
         st.write(df.head())
-        logger.info(f"Размер данных Alpaca: {df.shape}")
+        logger.info("Размер данных Alpaca: %s", df.shape)
 
-        # Графики 
+        # Графики
         fig = px.histogram(df, x="instruction", title="Распределение инструкций")
         st.plotly_chart(fig)
         logger.info("Гистограмма инструкций создана.")
@@ -71,7 +71,7 @@ try:
         df = pd.DataFrame(ds)
         st.write("### EDA для Audiocaps")
         st.write(df.head())
-        logger.info(f"Размер данных Audiocaps: {df.shape}")
+        logger.info("Размер данных Audiocaps: %s", df.shape)
 
         # Графики
         fig = px.histogram(df, x="start_time", title="Распределение начальных времен аудиоклипов")
@@ -84,11 +84,19 @@ try:
     if st.button("Инференс семпла"):
         sample = df.iloc[selected_sample]
         st.write("Выбранный семпл:", sample)
-        logger.info(f"Инференс семпла: {sample}")
+        logger.info("Инференс семпла: %s", sample)
 
-except Exception as e:
-    logger.error(f"Ошибка: {e}")
-    st.error(f"Произошла ошибка: {e}")
+except KeyError as e:
+    logger.error("Ошибка при доступе к ключу набора данных: %e", e)
+    st.error("Ошибка при доступе к ключу данных: %e", e)
+
+except ValueError as e:
+    logger.error("Ошибка при создании графика: %e", e)
+    st.error("Ошибка при создании графика: %e", e)
+
+except IndexError as e:
+    logger.error("Ошибка при доступе к индексу данных: %e", e)
+    st.error("Ошибка при доступе к индексу данных: %e", e)
 
 st.write("Приложение завершило работу.")
 logger.info("Приложение завершено.")
