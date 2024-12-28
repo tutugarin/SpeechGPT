@@ -1,14 +1,13 @@
 import os
-
 import torch
 from torch import Tensor
 from typing import Optional, Dict
 from fairseq.models import BaseFairseqModel, register_model
 from omegaconf import OmegaConf
-
 from speechgpt.logger import get_logger
 from speechgpt.models.whisper.model import HuggingFaceWhisperModel
 from speechgpt.models.qwen.model import HuggingFaceQwen2ForCausalLM
+from speechgpt.models.cascade.model import AsrLlmCascadeModel, get_cascade_model
 
 logger = get_logger()
 

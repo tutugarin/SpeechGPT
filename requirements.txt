@@ -4,8 +4,11 @@ librosa
 aiogram
 torch
 torchinfo
-omegaconf==2.0.6
-fairseq
+fairseq==0.12.2
 transformers
 datasets
 pylint
+omegaconf
+pydantic-settings
+fastapi
+uvicorn

@@ -70,7 +70,7 @@ async def predict(
         raise e
     except Exception as e:
         logger.exception("Internal server error occurred.")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @app.post("/fit", response_model=FitResponse)
@@ -96,11 +96,7 @@ async def fit(request: FitRequest) -> FitResponse:
 
 
 if __name__ == "__main__":
-    """
-    Starts the FastAPI app with Uvicorn.
-
-    This function will be executed when running the script directly.
-    """
+    # Starts the FastAPI app with Uvicorn.
     logger.info("Starting the FastAPI app.")
     uvicorn.run(app, host="0.0.0.0", port=8000)
     logger.info("Uvicorn started.")

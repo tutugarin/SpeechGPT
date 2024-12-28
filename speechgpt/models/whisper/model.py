@@ -1,17 +1,14 @@
-import os
 import soundfile as sf
 import torch
 from fairseq.models import (
     FairseqEncoderDecoderModel,
-    register_model,
     FairseqEncoder,
     FairseqDecoder
 )
-from transformers import AutoProcessor
 from speechgpt.logger import get_logger
 
 try:
-    from transformers import WhisperForConditionalGeneration
+    from transformers import WhisperForConditionalGeneration, AutoProcessor
     has_hf = True
 except ImportError:
     has_hf = False
@@ -25,8 +22,13 @@ class DummyEncoder(FairseqEncoder):
     A dummy encoder for the Hugging Face Whisper model.
     """
     def forward(self, *args, **kwargs):
-        return None
+        _ = args, kwargs
 
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """
+        Dummy implementation of reorder_encoder_out.
+        """
+        _ = encoder_out, new_order
 
 # Заглушка для декодера
 class DummyDecoder(FairseqDecoder):
@@ -34,7 +36,19 @@ class DummyDecoder(FairseqDecoder):
     A dummy decoder for the Hugging Face Whisper model.
     """
     def forward(self, *args, **kwargs):
-        return None
+        _ = args, kwargs
+
+    def extract_features(self, prev_output_tokens, encoder_out=None, **kwargs):
+        """
+        Dummy implementation of extract_features.
+        """
+        _ = prev_output_tokens, encoder_out, kwargs
+
+    def output_layer(self, features, **kwargs):
+        """
+        Dummy implementation of output_layer.
+        """
+        _ = features, kwargs
 
 
 DEFAULT_ASR_WEIGHTS = "openai/whisper-large-v3-turbo"
@@ -57,6 +71,7 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
     def __init__(self, args=None, task=None):
         dummy_encoder = DummyEncoder(None)
         dummy_decoder = DummyDecoder(None)
+        _ = task # для pylint'а
         super().__init__(dummy_encoder, dummy_decoder)
         if not has_hf:
             raise ImportError(
@@ -82,7 +97,7 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
         self.model = WhisperForConditionalGeneration.from_pretrained(model_path)
         self.processor = AutoProcessor.from_pretrained(model_path)
         self.config = self.model.config
-        logger.info(f"Model loaded from {model_path}")
+        logger.info("Model loaded from %s", model_path)
 
     @staticmethod
     def add_args(parser):
@@ -153,10 +168,12 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
         Returns:
         - input_features (torch.Tensor): the input features
         """
+        _ = kwargs # для pylint'а
+
         waveform, sampling_rate = sf.read(file)
         waveform = torch.tensor(waveform).unsqueeze(0).float()
         inputs = self.processor(waveform.squeeze(0), sampling_rate=sampling_rate, return_tensors="pt")
-        logger.info(f"Parsed waveform from file {file}")
+        logger.info("Parsed waveform from file %s", file)
         return inputs['input_features']
 
     def generate(self, audio_tokens=None, text=False, skip_special_tokens=True, file=None, **kwargs):
@@ -184,10 +201,9 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
         with torch.no_grad():
             generated_ids = self.model.generate(audio_tokens, **kwargs)
 
-        logger.debug(f"Generated speech output, length of generated tokens: {len(generated_ids)}")
+        logger.debug("Generated speech output, length of generated tokens:%s", len(generated_ids))
 
         if not text:
             return generated_ids
 
         return self.processor.batch_decode(generated_ids, skip_special_tokens=skip_special_tokens)
-

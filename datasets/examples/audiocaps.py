@@ -44,4 +44,3 @@ def get_dataset_iterator_audiocaps():
             start_time=item['start_time'],
             caption=item['caption']
         )
-        
