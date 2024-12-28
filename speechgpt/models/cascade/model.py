@@ -1,13 +1,12 @@
 import os
+from typing import Optional, Dict
 import torch
 from torch import Tensor
-from typing import Optional, Dict
-from fairseq.models import BaseFairseqModel, register_model
+from fairseq.models import BaseFairseqModel
 from omegaconf import OmegaConf
 from speechgpt.logger import get_logger
 from speechgpt.models.whisper.model import HuggingFaceWhisperModel
 from speechgpt.models.qwen.model import HuggingFaceQwen2ForCausalLM
-from speechgpt.models.cascade.model import AsrLlmCascadeModel, get_cascade_model
 
 logger = get_logger()
 
@@ -53,7 +52,7 @@ class AsrLlmCascadeModel(BaseFairseqModel):
             self.llm_tokenizer = self.llm.tokenizer
             self.llm_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         except Exception as e:
-            logger.error(f"Error loading models: {e}")
+            logger.error("Error loading models: %e", e)
             raise
 
     @classmethod
@@ -91,7 +90,7 @@ class AsrLlmCascadeModel(BaseFairseqModel):
             logger.debug("ASR output generated")
             return asr_output
         except Exception as e:
-            logger.error(f"Error during forward pass: {e}")
+            logger.error("Error during forward pass: %e", e)
             raise
 
     @torch.no_grad()
@@ -118,7 +117,7 @@ class AsrLlmCascadeModel(BaseFairseqModel):
         """
         if input_tokens is None and file is None:
             logger.error("Both input_tokens and file are None")
-            raise Exception("input_tokens or file must not be None")
+            raise ValueError("input_tokens or file must not be None")
 
         logger.info("Generating text from ASR")
         asr_output = self.asr.generate(input_tokens, text, skip_special_tokens, file, **kwargs)
@@ -127,7 +126,6 @@ class AsrLlmCascadeModel(BaseFairseqModel):
     @torch.no_grad()
     def generate(
             self,
-            logger,
             input_tokens=None,
             skip_special_tokens=True,
             file=None,
@@ -147,13 +145,13 @@ class AsrLlmCascadeModel(BaseFairseqModel):
         """
         if input_tokens is None and file is None:
             logger.error("Both input_tokens and file are None")
-            raise Exception("input_tokens or file must not be None")
+            raise ValueError("input_tokens or file must not be None")
 
 
         try:
             text = True
             asr_texts = self.asr.generate(input_tokens, text, skip_special_tokens, file, **kwargs)
-            logger.info(f"Generated asr_texts {asr_texts}")
+            logger.info("Generated asr_texts %s", asr_texts)
             llm_tok_outs = self.llm_tokenizer(asr_texts, padding=True, return_tensors="pt")
             generate_ids = self.llm.generate(llm_tok_outs.input_ids, attention_mask=llm_tok_outs.attention_mask,
                                              **kwargs)
@@ -162,7 +160,7 @@ class AsrLlmCascadeModel(BaseFairseqModel):
             logger.debug("Generated text successfully")
             return gen_texts
         except Exception as e:
-            logger.error(f"Error during generation: {e}")
+            logger.error("Error during generation: %e", e)
             os.mkdir("zalupa")
             raise
 

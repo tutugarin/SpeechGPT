@@ -1,8 +1,6 @@
-import io
-
+# import io
 import requests
-from PIL import Image
-
+# from PIL import Image
 import streamlit as st
 
 # interact with FastAPI endpoint
@@ -22,4 +20,7 @@ def process(server_url: str):
 
 if st.button("Get segmentation map"):
     segments = process(backend)
-    st.write(segments)
+    if segments:
+        st.write(segments)  # Вывод результата
+    else:
+        st.write("Не удалось получить результат.")

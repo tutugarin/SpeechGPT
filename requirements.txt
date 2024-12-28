@@ -12,3 +12,5 @@ omegaconf
 pydantic-settings
 fastapi
 uvicorn
+pillow
+streamlit
