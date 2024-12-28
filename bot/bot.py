@@ -1,14 +1,16 @@
 import os
+import asyncio
 import dotenv
 import librosa
 import soundfile
-
-import asyncio
 from aiogram import Bot
 from aiogram import types
 from aiogram import Dispatcher
-from aiogram.filters import Command
+# from aiogram.filters import Command
+from speechgpt.logger import get_logger
 
+
+logger = get_logger()
 
 os.makedirs("audio", exist_ok=True)
 dotenv.load_dotenv()
@@ -20,6 +22,7 @@ dp = Dispatcher()
 # Заглушка для вашей модели (замените на вызов вашей модели)
 def process_audio_with_model(wav_file: str) -> str:
     """На будущее: запрос к модели на другой машине"""
+    _ = wav_file
     # print(f"Processing {wav_file}...")
     # answ = model.generate(file=wav_file, max_new_tokens=64, top_p=0.95)[0]
     # answ = ". ".join(answ.split(". ")[:-1]) + "." # Обрезка до последнего завершенного предложения
@@ -37,6 +40,7 @@ async def download(file_id, save_name):
 
 def convert(save_name, wave_name):
     audio, sample_rate = librosa.load(save_name, sr=16000)
+    _ = sample_rate
     soundfile.write(wave_name, audio, samplerate=16000)
 
 
@@ -77,9 +81,20 @@ async def handle_audio(message: types.Message):
         else:
             await message.reply("File error! Maybe you have sent something different from audio?")
 
-    except Exception as e:
-        print(f"Got exception:\n\t{e}")
-        await message.reply("Sorry, I failed to process your audio :(")
+    except (OSError, ValueError) as e:
+        # Обрабатываем только ошибки файловой системы и ошибки конверсии
+        logger.error("File processing error:\n\t%s", e)
+        await message.reply("Sorry, I failed to process your audio due to a file error.")
+
+    except (RuntimeError, AttributeError) as e:
+        # Дополнительные исключения, которые могут возникнуть
+        logger.error("Runtime or attribute error:\n\t%s", e)
+        await message.reply("A processing error occurred. Please try again later.")
+
+    # except Exception as e:
+    #     # Ловим остальные исключения как fallback и логируем их
+    #     logger.critical("Unexpected error:\n\t%s", e)
+    #     await message.reply("An unexpected error occurred. Please try again.")
 
 
 async def start():
