@@ -14,3 +14,4 @@ fastapi
 uvicorn
 pillow
 streamlit
+flake8
