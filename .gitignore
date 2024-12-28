@@ -1,5 +1,4 @@
 __pycache__/
-.venv/
 .idea/
 .ipynb_checkpoints/
 .pylintrc
@@ -9,3 +8,4 @@ fairseq/
 weights/
 speechgpt/models/qwen/qwen2.py
 audio_cache/
+/venv
