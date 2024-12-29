@@ -4,3 +4,4 @@ requests-toolbelt==1.0.0
 plotly
 datasets
 aiohttp
+httpx
