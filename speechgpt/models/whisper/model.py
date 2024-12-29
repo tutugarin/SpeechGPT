@@ -176,7 +176,7 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
         logger.info("Parsed waveform from file %s", file)
         return inputs['input_features']
 
-    def generate(self, audio_tokens=None, text=False, skip_special_tokens=True, file=None, **kwargs):
+    def generate(self, audio_tokens=None, text=False, skip_special_tokens=True, file=None):
         """
         Generate speech output from the given audio tokens.
 
@@ -199,7 +199,7 @@ class HuggingFaceWhisperModel(FairseqEncoderDecoderModel):
         self.eval()
 
         with torch.no_grad():
-            generated_ids = self.model.generate(audio_tokens, **kwargs)
+            generated_ids = self.model.generate(audio_tokens)
 
         logger.debug("Generated speech output, length of generated tokens:%s", len(generated_ids))
 

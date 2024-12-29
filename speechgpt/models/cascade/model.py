@@ -126,6 +126,7 @@ class AsrLlmCascadeModel(BaseFairseqModel):
     @torch.no_grad()
     def generate(
             self,
+            logger,
             input_tokens=None,
             skip_special_tokens=True,
             file=None,
@@ -136,6 +137,7 @@ class AsrLlmCascadeModel(BaseFairseqModel):
 
         Args:
             input_tokens (Tensor): the input tokens
+            logger (logging.Logger): the logger
             skip_special_tokens (bool): whether to skip special tokens or not
             file (str): the file to generate text from
             **kwargs: additional arguments
@@ -147,21 +149,19 @@ class AsrLlmCascadeModel(BaseFairseqModel):
             logger.error("Both input_tokens and file are None")
             raise ValueError("input_tokens or file must not be None")
 
-
         try:
             text = True
-            asr_texts = self.asr.generate(input_tokens, text, skip_special_tokens, file, **kwargs)
+            asr_texts = self.asr.generate(input_tokens, text, skip_special_tokens, file)
             logger.info("Generated asr_texts %s", asr_texts)
             llm_tok_outs = self.llm_tokenizer(asr_texts, padding=True, return_tensors="pt")
             generate_ids = self.llm.generate(llm_tok_outs.input_ids, attention_mask=llm_tok_outs.attention_mask,
-                                             **kwargs)
+                                             max_new_tokens=150, do_sample=True, top_k=50, top_p=0.95)
             gen_texts = self.llm_tokenizer.batch_decode(generate_ids, skip_special_tokens=True,
                                                         clean_up_tokenization_spaces=False)
             logger.debug("Generated text successfully")
             return gen_texts
         except Exception as e:
             logger.error("Error during generation: %e", e)
-            os.mkdir("zalupa")
             raise
 
     def get_text(self):

@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+import uuid
 import multiprocessing as mp
 from multiprocessing import Process
 from concurrent.futures import ProcessPoolExecutor
@@ -32,8 +33,12 @@ class ModelManager:
         self.model = get_cascade_model()
         self.parallel = parallel
         self.executor = ProcessPoolExecutor(max_workers=self.num_processes)
+        self.model_list = [{'cascade': 'AsrLlmCascadeModel (Whisper ASR + Qwen LLM)'}]
 
         self.check_dir()
+
+    def get_models_list(self):
+        return self.model_list
 
     def check_dir(self):
         """
@@ -88,22 +93,41 @@ class ModelManager:
         except OSError as e:
             logger.exception("OS error occurred while deleting file: %s. Exception: %s", file_path, e)
 
-    def fit(self, X, y, *args, **kwargs):
+    def fit(self, config, *args, **kwargs):
         """
         Fit the model.
 
         Parameters:
-            X (list): The features.
-            y (list): The labels.
+            config (ModelConfig): The model configation.
         """
-        _ = X, y, args, kwargs # строка для того, чтобы не ругался pylint
+
+        raise ValueError("It's not enough system resources to fit the model.")
+
+        _ = args, kwargs # строка для того, чтобы не ругался pylint
         def training():
             time.sleep(5)
 
         process = Process(target=training)
         process.start()
         process.join()
-        return y # для того, чтобы не ругался pylint
+        return config # для того, чтобы не ругался pylint
+
+    def set_active_model(self, model_id: str):
+        def filter_by_name(entry):
+            is_valid = False
+            for k in entry.keys():
+                if k.lower() == model_id.lower():
+                    is_valid = True
+            return is_valid
+
+        model_exists = any(list(filter(filter_by_name, self.model_list)))
+
+        if model_exists is False:
+            raise ValueError("Model not found")
+        else:
+            raise ValueError("Model is already active")
+
+        return True
 
     async def predict(self, file_path: str, **kwargs) -> str:
         """
@@ -160,11 +184,7 @@ class ModelManager:
         _ = kwargs
         try:
             results = model.generate(file=file_path,
-                                     logger=log,
-                                         max_new_tokens=150,
-                                         do_sample=True,
-                                         top_k=50,
-                                         top_p=0.95)
+                                     logger=log)
             response = results[0]
             result = ". ".join(response.split(". ")[:-1]) + "."
 
