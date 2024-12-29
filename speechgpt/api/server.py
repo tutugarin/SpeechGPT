@@ -148,5 +148,5 @@ app.add_exception_handler(Exception, global_exception_handler)
 if __name__ == "__main__":
     # Starts the FastAPI app with Uvicorn.
     logger.info("Starting the FastAPI app.")
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
     logger.info("Uvicorn started.")

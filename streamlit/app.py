@@ -6,6 +6,7 @@ import logging
 import aiohttp
 import io
 import asyncio
+import httpx
 
 # Настройка логирования
 logging.basicConfig(
@@ -21,51 +22,51 @@ logger.info("Приложение запущено.")
 st.title("Dataset EDA and Inference App")
 logger.info("UI загружен.")
 
+async def send_file_to_server(file: bytes, filename: str) -> dict:
+    url = "http://speechgpt:8000/predict/"
 
-async def send_file_to_server(file):
-    try:
-        # Создаем асинхронную сессию для отправки данных
-        async with aiohttp.ClientSession() as session:
-            url = "http://speechgpt:8000/predict"
-            data = aiohttp.FormData()
-            data.add_field('file', file, filename='audio.wav', content_type='audio/wav')
+    files = {"file": (filename, file, "audio/wav")}
 
-            async with session.post(url, data=data, timeout=600) as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    return {"error": f"Ошибка от сервера: {response.status}"}
-    except asyncio.TimeoutError:
-        return {"error": "Сервер не ответил в течение 10 минут."}
-    except Exception as e:
-        logger.error(f"Ошибка при отправке файла: {e}")
-        return {"error": f"Ошибка при отправке файла: {e}"}
+    async with httpx.AsyncClient(timeout=httpx.Timeout(600.0)) as client:
+        try:
+            response = await client.post(url, files=files)
+            response.raise_for_status()
+
+            return {"status": "success", "data": response.json()}
+
+        except httpx.HTTPStatusError as e:
+            return {"error": str(e), "detail": "HTTP error occurred."}
+        except Exception as e:
+            return {"error": str(e), "detail": "An error occurred."}
 
 
-st.write("### Загрузка файла для инференса")
+st.write("### Загрузка файла для SpeechGPT")
 uploaded_file = st.file_uploader("Загрузите файл для отправки на сервер SpeechGPT", type=["wav", "mp3", "flac"])
 
 if uploaded_file is not None:
     logger.info(f"Файл загружен: {uploaded_file.name}")
     st.write("Отправка файла на сервер. Время ответа в среднем занимает 3-5 минут, пожалуста, подождите.")
 
-    file_data = io.BytesIO(uploaded_file.read())
+    file = uploaded_file.read()
+    name = uploaded_file.name
 
-    response_data = asyncio.run(send_file_to_server(file_data))
+    response_data = asyncio.run(send_file_to_server(file, name))
 
     if 'error' in response_data:
         st.error(response_data['detail'])
     else:
-        st.write(response_data['text'])
+        st.write("Ответ модели:")
+        st.write(response_data['data']["text"])
         logger.info(f"Ответ от сервера: {response_data}")
 
+st.write("### Загрузка датасета для EDA")
 # Выбор датасета
 dataset_option = st.selectbox(
     "Выберите датасет для анализа",
     ("FSD50K", "AISHELL", "Alpaca", "Audiocaps")
 )
 logger.info(f"Выбран датасет: {dataset_option}")
-
+st.write("Время получения EDA 5-10 минут.")
 try:
     if dataset_option == "FSD50K":
         logger.info("Загрузка FSD50K dataset...")
@@ -96,12 +97,12 @@ try:
     elif dataset_option == "Alpaca":
         logger.info("Загрузка Alpaca dataset...")
         ds = load_dataset("yahma/alpaca-cleaned")['train']
-        df = pd.DataFrame(ds) 
+        df = pd.DataFrame(ds)
         st.write("### EDA для Alpaca")
         st.write(df.head())
         logger.info(f"Размер данных Alpaca: {df.shape}")
 
-        # Графики 
+        # Графики
         fig = px.histogram(df, x="instruction", title="Распределение инструкций")
         st.plotly_chart(fig)
         logger.info("Гистограмма инструкций создана.")
@@ -119,13 +120,13 @@ try:
         st.plotly_chart(fig)
         logger.info("Гистограмма начальных времен аудиоклипов создана.")
 
-    # Инференс семпла
-    st.write("### Инференс семпла")
-    selected_sample = st.number_input("Выберите индекс семпла", min_value=0, step=1, value=0)
-    if st.button("Инференс семпла"):
-        sample = df.iloc[selected_sample]
-        st.write("Выбранный семпл:", sample)
-        logger.info(f"Инференс семпла: {sample}")
+    # # Инференс семпла
+    # st.write("### Инференс семпла")
+    # selected_sample = st.number_input("Выберите индекс семпла", min_value=0, step=1, value=0)
+    # if st.button("Инференс семпла"):
+    #     sample = df.iloc[selected_sample]
+    #     st.write("Выбранный семпл:", sample)
+    #     logger.info(f"Инференс семпла: {sample}")
 
 except Exception as e:
     logger.error(f"Ошибка: {e}")
