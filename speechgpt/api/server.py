@@ -1,10 +1,13 @@
-from typing import Annotated
+from typing import Annotated, Optional
 
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
+from requests import Request
+
 from speechgpt.api.model_manager import ModelManager
-from speechgpt.api.schemas import FitRequest, FitResponse, PredictResponse, StatusResponse
+from speechgpt.api.schemas import FitRequest, FitResponse, PredictResponse, StatusResponse, ModelListResponse, \
+    SetModelResponse, SetModelRequest
 from speechgpt.logger import get_logger
 from speechgpt.api.config import settings
 
@@ -86,8 +89,7 @@ async def fit(request: FitRequest) -> FitResponse:
     """
     logger.info("Fit request received.")
     _ = model_manager.fit(
-        X=request.X,
-        y=request.y
+        config=request.config
     )
     message = "Model trained and loaded to inference"
     logger.info(message)
@@ -95,8 +97,56 @@ async def fit(request: FitRequest) -> FitResponse:
     return JSONResponse(content=response.model_dump(), status_code=200)
 
 
+@app.get("/models", response_model=ModelListResponse)
+async def list_models() -> ModelListResponse:
+    """
+    Endpoint to retrieve the list of models with detailed information.
+
+    Returns:
+        ModelListResponse: A list of models with detailed information.
+    """
+    logger.info("Models list request received.")
+    models = model_manager.get_models_list()
+    logger.info("Retrieved models: %s", models)
+
+    response = ModelListResponse(models=models)
+    return JSONResponse(content=response.model_dump(), status_code=200)
+
+
+@app.post("/set", response_model=SetModelResponse)
+async def set_model(request: SetModelRequest) -> SetModelResponse:
+    """
+    Endpoint to set the active model by its ID.
+
+    Args:
+        request (SetModelRequest): The request containing the model ID.
+
+    Returns:
+        SetModelResponse: A response confirming the active model is set.
+    """
+
+    logger.info("Set model request received for ID: %s", request.id)
+
+    _ = model_manager.set_active_model(request.id)
+
+    message = f"Model with ID {request.id} set as active."
+    logger.info(message)
+    response = SetModelResponse(message=message)
+    return JSONResponse(content=response.model_dump(), status_code=200)
+
+
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": str(exc)
+        }
+    )
+
+app.add_exception_handler(Exception, global_exception_handler)
+
 if __name__ == "__main__":
     # Starts the FastAPI app with Uvicorn.
     logger.info("Starting the FastAPI app.")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
     logger.info("Uvicorn started.")

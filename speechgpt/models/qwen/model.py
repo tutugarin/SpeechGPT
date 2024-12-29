@@ -1,14 +1,15 @@
-from collections import OrderedDict
-from typing import Optional, Tuple, Union, List
 import torch
 from torch import nn
+from collections import OrderedDict
+from typing import Optional, Tuple, Union, List
 
 from fairseq.models import (
+    register_model,
     FairseqDecoder,
     FairseqLanguageModel,
 )
 
-from transformers import Qwen2Config, AutoTokenizer, Qwen2ForCausalLM
+from transformers import Qwen2Config, AutoTokenizer
 from transformers import GenerationMixin, GenerationConfig
 from transformers.models.qwen2.modeling_qwen2 import (
     Qwen2RMSNorm,
@@ -39,7 +40,7 @@ class Qwen2Decoder(FairseqDecoder):
         self.vocab_size = config.vocab_size
         self.config = config
 
-        logger.info("Initializing Qwen2Decoder with %s layers.", {config.num_hidden_layers})
+        logger.info(f"Initializing Qwen2Decoder with {config.num_hidden_layers} layers.")
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         self.layers = nn.ModuleList(
             [Qwen2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
@@ -65,8 +66,8 @@ class Qwen2Decoder(FairseqDecoder):
 
     def forward(
         self,
-        prev_output_tokens: torch.LongTensor = None,
-        encoder_out: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_values: Optional[List[torch.FloatTensor]] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
@@ -75,14 +76,11 @@ class Qwen2Decoder(FairseqDecoder):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
-        **kwargs,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
-
-        _ = kwargs # для работы pylint
 
         if self.gradient_checkpointing and self.training:
             use_cache = False
@@ -93,8 +91,8 @@ class Qwen2Decoder(FairseqDecoder):
         # use_cache = False
         # return_dict = True
 
-        if (prev_output_tokens is None) ^ (inputs_embeds is not None):
-            raise ValueError("You must specify exactly one of prev_output_tokens or inputs_embeds")
+        if (input_ids is None) ^ (inputs_embeds is not None):
+            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
 
         # kept for BC (non `Cache` `past_key_values` inputs)
         return_legacy_cache = False
@@ -106,7 +104,7 @@ class Qwen2Decoder(FairseqDecoder):
                 past_key_values = DynamicCache.from_legacy_cache(past_key_values)
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(prev_output_tokens)
+            inputs_embeds = self.embed_tokens(input_ids)
 
         if cache_position is None:
             past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
@@ -117,7 +115,7 @@ class Qwen2Decoder(FairseqDecoder):
             position_ids = cache_position.unsqueeze(0)
 
         causal_mask = self._update_causal_mask(
-            encoder_out, inputs_embeds, cache_position, past_key_values, output_attentions
+            attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
         )
 
         hidden_states = inputs_embeds
@@ -195,7 +193,7 @@ class Qwen2Decoder(FairseqDecoder):
         past_key_values: Cache,
         output_attentions: bool,
     ):
-        if self.config.attn_implementation == "flash_attention_2":
+        if self.config._attn_implementation == "flash_attention_2":
             if attention_mask is not None and 0.0 in attention_mask:
                 return attention_mask
             return None
@@ -209,11 +207,11 @@ class Qwen2Decoder(FairseqDecoder):
 
         # When output attentions is True, sdpa implementation's forward method calls the eager implementation's forward
         if (
-            self.config.attn_implementation == "sdpa"
+            self.config._attn_implementation == "sdpa"
             and not (using_static_cache or using_sliding_window_cache)
             and not output_attentions
         ):
-            if AttentionMaskConverter._ignore_causal_mask_sdpa( # pylint: disable=protected-access
+            if AttentionMaskConverter._ignore_causal_mask_sdpa(
                 attention_mask,
                 inputs_embeds=input_tensor,
                 past_key_values_length=past_seen_tokens,
@@ -250,7 +248,7 @@ class Qwen2Decoder(FairseqDecoder):
         )
 
         if (
-            self.config.attn_implementation == "sdpa"
+            self.config._attn_implementation == "sdpa"
             and attention_mask is not None
             and attention_mask.device.type == "cuda"
             and not output_attentions
@@ -258,14 +256,12 @@ class Qwen2Decoder(FairseqDecoder):
             # Attend to all tokens in fully masked rows in the causal_mask, for example the relevant first rows when
             # using left padding. This is required by F.scaled_dot_product_attention memory-efficient attention path.
             # Details: https://github.com/pytorch/pytorch/issues/110213
-            causal_mask = AttentionMaskConverter._unmask_unattended(causal_mask, min_dtype) # pylint: disable=protected-access
+            causal_mask = AttentionMaskConverter._unmask_unattended(causal_mask, min_dtype)
 
         return causal_mask
 
     @staticmethod
-    # Copied from transformers.models.mistral.modeling_mistral.MistralModel.
-    # _prepare_4d_causal_attention_mask_with_cache_position
-    # with Mistral->Qwen2
+    # Copied from transformers.models.mistral.modeling_mistral.MistralModel._prepare_4d_causal_attention_mask_with_cache_position with Mistral->Qwen2
     def _prepare_4d_causal_attention_mask_with_cache_position(
         attention_mask: torch.Tensor,
         sequence_length: int,
@@ -283,13 +279,11 @@ class Qwen2Decoder(FairseqDecoder):
 
         Args:
             attention_mask (`torch.Tensor`):
-                A 2D attention mask of shape `(batch_size, key_value_length)` or a 4D attention mask of shape 
-                `(batch_size, 1, query_length, key_value_length)`.
+                A 2D attention mask of shape `(batch_size, key_value_length)` or a 4D attention mask of shape `(batch_size, 1, query_length, key_value_length)`.
             sequence_length (`int`):
                 The sequence length being processed.
             target_length (`int`):
-                The target length: when generating with static cache, the mask should be as long as the static cache, 
-                to account for the 0 padding, the part of the cache that is not filled yet.
+                The target length: when generating with static cache, the mask should be as long as the static cache, to account for the 0 padding, the part of the cache that is not filled yet.
             dtype (`torch.dtype`):
                 The dtype to use for the 4D attention mask.
             device (`torch.device`):
@@ -314,8 +308,7 @@ class Qwen2Decoder(FairseqDecoder):
             )
             diagonal_attend_mask = torch.arange(target_length, device=device) > cache_position.reshape(-1, 1)
             if config.sliding_window is not None:
-                # if we have sliding window, we should not attend to tokens beyond sliding window length,
-                # so we mask them out also
+                # if we have sliding window, we should not attend to tokens beyond sliding window length, so we mask them out also
                 # the check is needed to verify is current checkpoint was trained with sliding window or not
                 if not isinstance(past_key_values, SlidingWindowCache) or sequence_length > target_length:
                     sliding_attend_mask = torch.arange(target_length, device=device) <= (
@@ -336,22 +329,6 @@ class Qwen2Decoder(FairseqDecoder):
                 )
         return causal_mask
 
-    def extract_features(self, prev_output_tokens, encoder_out=None, **kwargs):
-        """
-        Dummy implementation of extract_features.
-        """
-        _ = prev_output_tokens, encoder_out, kwargs
-
-    def output_layer(self, features, **kwargs):
-        """
-        Dummy implementation of output_layer.
-        """
-        _ = features, kwargs
-
-    @property
-    def attn_implementation(self):
-        return self._attn_implementation
-
 
 DEFAULT_LLM_WEIGHTS = "Qwen/Qwen2-0.5B"
 
@@ -367,9 +344,7 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
         else:
             model_path = DEFAULT_LLM_WEIGHTS
 
-        _ = task # для pylint
-
-        logger.info("Loading model from %s", model_path)
+        logger.info(f"Loading model from {model_path}")
         config = Qwen2Config.from_pretrained(model_path)
         super().__init__(Qwen2Decoder(config))  # init self.decoder
         self.vocab_size = config.vocab_size
@@ -388,12 +363,12 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
 
     @classmethod
     def build_model(cls, args, task=None):
-        logger.info("Building HuggingFaceQwen2ForCausalLM model.")
+        logger.info(f"Building HuggingFaceQwen2ForCausalLM model.")
         return cls(args, task)
 
-    def to(self, device): # pylint: disable=arguments-differ
-        logger.info("Moving model to device: %s", device)
-        if isinstance(device, str): #type(device) is str
+    def to(self, device):
+        logger.info(f"Moving model to device: {device}")
+        if type(device) is str:
             self.device = torch.device(device)
         else:
             self.device = device
@@ -407,6 +382,8 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
             state_dict = torch.load(args.local_llm_weights, weights_only=True)
         else:
             path = args.llm_config if args and not args.local_llm_weights else DEFAULT_LLM_WEIGHTS
+
+            from transformers import Qwen2ForCausalLM
             state_dict = Qwen2ForCausalLM.from_pretrained(path).state_dict()
             # меняем model на decoder т.к. Fairseq требует self.decoder вместо self.model в HF
             state_dict = OrderedDict([
@@ -440,7 +417,7 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
 
     def forward(
         self,
-        src_tokens: torch.LongTensor = None,
+        input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
         labels: Optional[torch.LongTensor] = None,
         return_dict: Optional[bool] = None,
@@ -458,7 +435,7 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.decoder(
-            input_ids=src_tokens,
+            input_ids=input_ids,
             attention_mask=attention_mask,
             return_dict=return_dict,
         )
