@@ -3,10 +3,9 @@ import pandas as pd
 import plotly.express as px
 from datasets import load_dataset
 import logging
-import aiohttp
-import io
 import asyncio
 import httpx
+
 
 # Настройка логирования
 logging.basicConfig(

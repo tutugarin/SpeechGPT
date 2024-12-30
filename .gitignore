@@ -9,3 +9,4 @@ weights/
 speechgpt/models/qwen/qwen2.py
 audio_cache/
 /venv
+.env
