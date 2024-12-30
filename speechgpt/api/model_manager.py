@@ -104,14 +104,14 @@ class ModelManager:
 
         raise ValueError("It's not enough system resources to fit the model.")
 
-        _ = args, kwargs # строка для того, чтобы не ругался pylint
-        def training():
-            time.sleep(5)
+        # _ = args, kwargs # строка для того, чтобы не ругался pylint
+        # def training():
+        #     time.sleep(5)
 
-        process = Process(target=training)
-        process.start()
-        process.join()
-        return config # для того, чтобы не ругался pylint
+        # process = Process(target=training)
+        # process.start()
+        # process.join()
+        # return config # для того, чтобы не ругался pylint
 
     def set_active_model(self, model_id: str):
         def filter_by_name(entry):
