@@ -14,13 +14,6 @@ uvicorn~=0.34.0
 pydantic-settings~=2.6.1
 python-multipart~=0.0.19
 flake8
-aiogram
 pillow
-streamlit==1.30.0
-requests==2.32.2
-requests-toolbelt==1.0.0
 plotly
-aiohttp
-httpx
 tensorboardX
-mlflow==2.19.0

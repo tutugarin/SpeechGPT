@@ -8,3 +8,5 @@ audio_cache/
 .env
 logs/
 audio.wav
+mlruns/
+mlartifacts/

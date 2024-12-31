@@ -5,6 +5,7 @@ from datasets import load_dataset
 import logging
 import asyncio
 import httpx
+import os
 
 
 # Настройка логирования
@@ -130,6 +131,42 @@ try:
 except Exception as e:
     logger.error(f"Ошибка: {e}")
     st.error(f"Произошла ошибка: {e}")
+
+
+st.write("### Просмотр информации об эксперименте")
+try:
+    import mlflow
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    all_runs = mlflow.search_runs(search_all_experiments=True)[["run_id", "tags.mlflow.runName"]]
+    run_name = st.selectbox("Выберите интересующий эксперимент из списка", all_runs["tags.mlflow.runName"])
+    run_id = all_runs.loc[all_runs["tags.mlflow.runName"] == run_name]["run_id"].values[0]
+
+    run = mlflow.get_run(run_id)
+    metrics = run.data.metrics
+    params = run.data.params
+    artifacts_path = mlflow.artifacts.download_artifacts(run_id=run_id)
+
+    st.write("#### Model summary")
+    summary_path = os.path.join(artifacts_path, "model_summary.txt")
+    with open(summary_path, "r") as f:
+        st.write(f.read())
+
+    st.write("#### Метрики")
+    st.table(pd.DataFrame(metrics.items()))
+
+    st.write("#### Обучение")
+    st.write("#### Параметры обучения")
+    st.table(pd.DataFrame(params.items()))
+
+    st.write("Кривые обучения")
+    loss_img_path = os.path.join(artifacts_path, "train_loss.png")
+    st.image(loss_img_path)
+except:
+    st.write("К сожалению, в данный момент функция недоступна")
+
 
 st.write("Приложение завершило работу.")
 logger.info("Приложение завершено.")
