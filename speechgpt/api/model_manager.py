@@ -1,15 +1,16 @@
-import asyncio
 import os
 import time
-import uuid
+import asyncio
 import multiprocessing as mp
 from multiprocessing import Process
 from concurrent.futures import ProcessPoolExecutor
 from uuid import uuid4
 import soundfile as sf
 import torch.multiprocessing
+
 from speechgpt.logger import get_logger
 from speechgpt.models import get_cascade_model
+
 mp.set_start_method("spawn", force=True)
 torch.multiprocessing.set_sharing_strategy('file_descriptor')  # Альтернативная стратегия
 
@@ -103,14 +104,14 @@ class ModelManager:
 
         raise ValueError("It's not enough system resources to fit the model.")
 
-        _ = args, kwargs # строка для того, чтобы не ругался pylint
-        def training():
-            time.sleep(5)
+        # _ = args, kwargs # строка для того, чтобы не ругался pylint
+        # def training():
+        #     time.sleep(5)
 
-        process = Process(target=training)
-        process.start()
-        process.join()
-        return config # для того, чтобы не ругался pylint
+        # process = Process(target=training)
+        # process.start()
+        # process.join()
+        # return config # для того, чтобы не ругался pylint
 
     def set_active_model(self, model_id: str):
         def filter_by_name(entry):

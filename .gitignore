@@ -1,11 +1,12 @@
 __pycache__/
 .idea/
 .ipynb_checkpoints/
-.pylintrc
-poetry.lock
-pyptoject.toml
 fairseq/
 weights/
-speechgpt/models/qwen/qwen2.py
 audio_cache/
 /venv
+.env
+logs/
+audio.wav
+mlruns/
+mlartifacts/
