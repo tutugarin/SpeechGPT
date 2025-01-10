@@ -1,4 +1,3 @@
-import os
 from typing import Optional, Dict
 import torch
 from torch import Tensor
@@ -130,6 +129,7 @@ class AsrLlmCascadeModel(BaseFairseqModel):
             input_tokens=None,
             skip_special_tokens=True,
             file=None,
+            prompt=None,
             **kwargs
     ):
         """
@@ -145,14 +145,21 @@ class AsrLlmCascadeModel(BaseFairseqModel):
         Returns:
             the generated text
         """
-        if input_tokens is None and file is None:
-            logger.error("Both input_tokens and file are None")
-            raise ValueError("input_tokens or file must not be None")
+        if input_tokens is None and file is None and prompt is None:
+            logger.error("All of input_tokens, file, prompt are None")
+            raise ValueError("One of input_tokens or file or prompt must not be None")
 
         try:
-            text = True
-            asr_texts = self.asr.generate(input_tokens, text, skip_special_tokens, file)
-            logger.info("Generated asr_texts %s", asr_texts)
+            if input_tokens is not None or file is not None:
+                is_text = True
+                asr_texts = self.asr.generate(input_tokens, is_text, skip_special_tokens, file)
+                logger.info("Generated asr_texts %s", asr_texts)
+            else:
+                asr_texts = [""]
+
+            if prompt is not None:
+                asr_texts = [f"{prompt}\n\n{txt}" for txt in asr_texts]
+
             llm_tok_outs = self.llm_tokenizer(asr_texts, padding=True, return_tensors="pt")
             generate_ids = self.llm.generate(llm_tok_outs.input_ids, attention_mask=llm_tok_outs.attention_mask,
                                              max_new_tokens=150, do_sample=True, top_k=50, top_p=0.95)
@@ -175,7 +182,6 @@ def get_cascade_model():
     args.asr_config = "openai/whisper-large-v3-turbo"
     cascade = AsrLlmCascadeModel.build_model(args)
     logger.info("Cascade model initialized successfully")
-
     return cascade
 
 

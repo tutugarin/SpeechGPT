@@ -1,13 +1,21 @@
-from typing import Annotated, Optional
+from typing import Annotated
 
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from requests import Request
 
 from speechgpt.api.model_manager import ModelManager
-from speechgpt.api.schemas import FitRequest, FitResponse, PredictResponse, StatusResponse, ModelListResponse, \
-    SetModelResponse, SetModelRequest
+from speechgpt.api.schemas import (
+    FitRequest,
+    FitResponse,
+    PredictResponse,
+    StatusResponse,
+    ModelListResponse,
+    SetModelResponse,
+    SetModelRequest,
+)
+
 from speechgpt.logger import get_logger
 from speechgpt.api.config import settings
 

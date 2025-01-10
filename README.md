@@ -14,6 +14,10 @@ docker compose build
 docker compose up
 ```
 
+# Установка пакета `speechgpt`
+
+`pip install -e .`
+
 # Работа сервиса
 
 ## FastAPI

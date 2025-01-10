@@ -1,6 +1,6 @@
-from typing import List, Dict, Any, Union, Optional
+from typing import List, Dict, Any
 from pydantic import BaseModel
-from fastapi import File, UploadFile
+
 
 class ModelConfig(BaseModel):
     """Configuration for the model."""
@@ -31,11 +31,6 @@ class PredictResponse(BaseModel):
 class StatusResponse(BaseModel):
     """Response schema for health check."""
     status: str
-
-
-class ModelListResponse(BaseModel):
-    """List of models response."""
-    models: List[Dict[str, Any]]
 
 
 class SetModelRequest(BaseModel):

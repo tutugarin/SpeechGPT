@@ -1,15 +1,15 @@
+import torch
+from torch import nn
 from collections import OrderedDict
 from typing import Optional, Tuple, Union, List
 
-import torch
-from torch import nn
-
 from fairseq.models import (
+    register_model,
     FairseqDecoder,
     FairseqLanguageModel,
 )
 
-from transformers import Qwen2Config, AutoTokenizer
+from transformers import Qwen2Config
 from transformers import GenerationMixin, GenerationConfig
 from transformers.models.qwen2.modeling_qwen2 import (
     Qwen2RMSNorm,
@@ -23,24 +23,19 @@ from transformers.cache_utils import (
 from transformers.modeling_attn_mask_utils import AttentionMaskConverter
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 
-from speechgpt.logger import get_logger
-
-logger = get_logger()
 
 class Qwen2Decoder(FairseqDecoder):
     """
     Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`Qwen2DecoderLayer`]
-
     Args:
         config: Qwen2Config
     """
-    def __init__(self, config: Qwen2Config):
-        super().__init__(dictionary=None)
+    def __init__(self, dictionary, config: Qwen2Config):
+        super().__init__(dictionary)
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
         self.config = config
 
-        logger.info(f"Initializing Qwen2Decoder with {config.num_hidden_layers} layers.")
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         self.layers = nn.ModuleList(
             [Qwen2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
@@ -52,11 +47,16 @@ class Qwen2Decoder(FairseqDecoder):
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
         # self.post_init()
-        logger.info("Qwen2Decoder initialized successfully.")
 
     @classmethod
-    def build_model(cls, config):
-        return cls(config)
+    def build_model(cls, args, task):
+        dictionary = task.source_dictionary
+        return cls(dictionary=dictionary)
+
+    @staticmethod
+    def add_args(parser):
+        parser.add_argument('--load-from', type=str, default='mistralai/Mistral-7B-v0.1',
+                            help='The path to load model from')
 
     def get_input_embeddings(self):
         return self.embed_tokens
@@ -176,7 +176,6 @@ class Qwen2Decoder(FairseqDecoder):
 
         if not return_dict:
             return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
-
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=next_cache,
@@ -261,7 +260,7 @@ class Qwen2Decoder(FairseqDecoder):
         return causal_mask
 
     @staticmethod
-    # Copied from transformers.models.mistral.modeling_mistral.MistralModel with Mistral->Qwen2
+    # Copied from transformers.models.mistral.modeling_mistral.MistralModel._prepare_4d_causal_attention_mask_with_cache_position with Mistral->Qwen2
     def _prepare_4d_causal_attention_mask_with_cache_position(
         attention_mask: torch.Tensor,
         sequence_length: int,
@@ -279,13 +278,11 @@ class Qwen2Decoder(FairseqDecoder):
 
         Args:
             attention_mask (`torch.Tensor`):
-                A 2D attention mask of shape `(batch_size, key_value_length)`
-                or a 4D attention mask of shape `(batch_size, 1, query_length, key_value_length)`.
+                A 2D attention mask of shape `(batch_size, key_value_length)` or a 4D attention mask of shape `(batch_size, 1, query_length, key_value_length)`.
             sequence_length (`int`):
                 The sequence length being processed.
             target_length (`int`):
-                The target length: when generating with static cache, the mask should be as long as the static cache,
-                to account for the 0 padding, the part of the cache that is not filled yet.
+                The target length: when generating with static cache, the mask should be as long as the static cache, to account for the 0 padding, the part of the cache that is not filled yet.
             dtype (`torch.dtype`):
                 The dtype to use for the 4D attention mask.
             device (`torch.device`):
@@ -299,7 +296,6 @@ class Qwen2Decoder(FairseqDecoder):
             past_key_values (`Cache`):
                 The cache class that is being used currently to generate
         """
-
         if attention_mask is not None and attention_mask.dim() == 4:
             # In this case we assume that the mask comes already in inverted form and requires no inversion or slicing.
             causal_mask = attention_mask
@@ -310,8 +306,8 @@ class Qwen2Decoder(FairseqDecoder):
             )
             diagonal_attend_mask = torch.arange(target_length, device=device) > cache_position.reshape(-1, 1)
             if config.sliding_window is not None:
-                # if we have sliding window, we should not attend to tokens beyond sliding window length,
-                # so we mask them out also the check is needed to verify is current checkpoint was trained with sliding window or not
+                # if we have sliding window, we should not attend to tokens beyond sliding window length, so we mask them out also
+                # the check is needed to verify is current checkpoint was trained with sliding window or not
                 if not isinstance(past_key_values, SlidingWindowCache) or sequence_length > target_length:
                     sliding_attend_mask = torch.arange(target_length, device=device) <= (
                         cache_position.reshape(-1, 1) - config.sliding_window
@@ -332,44 +328,24 @@ class Qwen2Decoder(FairseqDecoder):
         return causal_mask
 
 
-DEFAULT_LLM_WEIGHTS = "Qwen/Qwen2-0.5B"
-
-# @register_model('speechgpt_qwen2_casual')
-class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
+@register_model('speechgpt_qwen2_casual')
+class Qwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
     main_input_name = "input_ids"
     _supports_cache_class = False
     _tied_weights_keys = ["lm_head.weight"]
 
-    def __init__(self, args, task=None):
-        if args and args.llm_config:
-            model_path = args.llm_config
-        else:
-            model_path = DEFAULT_LLM_WEIGHTS
-
-        logger.info(f"Loading model from {model_path}")
-        config = Qwen2Config.from_pretrained(model_path)
-        super().__init__(Qwen2Decoder(config))  # init self.decoder
+    def __init__(self, dictionary, config):
+        super().__init__(Qwen2Decoder(dictionary, config))  # init self.decoder
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.generation_config = GenerationConfig.from_model_config(config)
-        self.config = config
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.config = self.decoder.config
         self.device = torch.device("cpu")
 
         # Initialize weights and apply final processing
         # self.post_init()
 
-        logger.info("Model initialized successfully.")
-
-        self.load_model(args)
-
-    @classmethod
-    def build_model(cls, args, task=None):
-        logger.info(f"Building HuggingFaceQwen2ForCausalLM model.")
-        return cls(args, task)
-
     def to(self, device):
-        logger.info(f"Moving model to device: {device}")
         if type(device) is str:
             self.device = torch.device(device)
         else:
@@ -378,22 +354,10 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
         self.lm_head = self.lm_head.to(device)
         return self
 
-    def load_model(self, args):
-        logger.info("Loading model weights.")
-        if args and args.local_llm_weights:
-            state_dict = torch.load(args.local_llm_weights, weights_only=True)
-        else:
-            path = args.llm_config if args and not args.local_llm_weights else DEFAULT_LLM_WEIGHTS
-
-            from transformers import Qwen2ForCausalLM
-            state_dict = Qwen2ForCausalLM.from_pretrained(path).state_dict()
-            # меняем model на decoder т.к. Fairseq требует self.decoder вместо self.model в HF
-            state_dict = OrderedDict([
-                (k.replace("model.", "decoder."), v) for k, v in state_dict.items()
-            ])
-
-        logger.info("Loaded model weights.")
-
+    def from_state_dict(self, state_dict):
+        state_dict = OrderedDict([
+            (k.replace("model.", "decoder."), v) for k, v in state_dict.items()
+        ])
         self.load_state_dict(state_dict)
 
     def can_generate(self):
@@ -421,8 +385,16 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
         self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        num_logits_to_keep: int = 0,
         **loss_kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
@@ -431,32 +403,49 @@ class HuggingFaceQwen2ForCausalLM(FairseqLanguageModel, GenerationMixin):
                 Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
                 config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
                 (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
+
+            num_logits_to_keep (`int`, *optional*):
+                Calculate logits for the last `num_logits_to_keep` tokens. If `0`, calculate logits for all
+                `input_ids` (special case). Only last token logits are needed for generation, and calculating them only for that
+                token can save memory, which becomes pretty significant for long sequences or large vocabulary size.
         """
 
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.decoder(
             input_ids=input_ids,
             attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            cache_position=cache_position,
         )
 
         hidden_states = outputs[0]
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-        logits = self.lm_head(hidden_states)
+        logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :])
 
         loss = None
         if labels is not None:
-
             loss = self.loss_function(logits, labels, self.vocab_size, **loss_kwargs)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
-
             return (loss,) + output if loss is not None else output
 
         return CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
         )
