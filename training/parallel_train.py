@@ -140,7 +140,7 @@ def collate_fn(batch, asr_processor, llm_tokenizer, max_duration, max_text_lengt
 
 
 class ModelWrapper(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, device="cpu"):
         super().__init__()
         asr_model = WhisperForConditionalGeneration.from_pretrained(args.asr_model_name)
         self.llm_model = AutoModelForCausalLM.from_pretrained(args.llm_model_name)
@@ -160,13 +160,10 @@ class ModelWrapper(nn.Module):
         self.adapter = get_adapter(args.adapter_type, args)
         print(f"Число параметров адаптера: {sum(p.numel() for p in self.adapter.parameters())}")
 
-        if args.device == 'cuda' and torch.cuda.is_available():
-            self.device = args.device
-            self.asr_encoder = self.asr_encoder.to(args.device)
-            self.llm_model = self.llm_model.to(args.device)
-            self.adapter = self.adapter.to(args.device)
-        else:
-            self.device = "cpu"
+        self.asr_encoder = self.asr_encoder.to(device)
+        self.llm_model = self.llm_model.to(device)
+        self.adapter = self.adapter.to(device)
+        self.device = device
 
         # freeze layers
         for model in [self.asr_encoder, self.llm_embed_layer, self.llm_model]:
@@ -280,7 +277,7 @@ def train_model(rank, world_size, args):
         sampler=DistributedSampler(dataset),
     )
 
-    model = ModelWrapper(args)
+    model = ModelWrapper(args, device=rank)
     model = DistributedDataParallel(model, device_ids=[rank])
     optimizer = AdamW(model.parameters(), lr=args.learning_rate)
 
