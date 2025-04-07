@@ -1,3 +1,4 @@
+datasets==3.0.1
 python-dotenv
 soundfile
 librosa
@@ -5,6 +6,7 @@ aiogram
 torch
 torchinfo
 fairseq==0.12.2
+tensorboard
 transformers
 datasets
 pylint
@@ -15,3 +17,4 @@ uvicorn
 pillow
 streamlit
 flake8
+jiwer==3.1.0
