@@ -1,7 +1,10 @@
+#!/usr/bin/env python3 # -*- cod
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import os
+os.environ["XLA_DISABLE_PLUGIN_LOAD"] = "1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import gc
 import argparse
 import functools
@@ -25,8 +28,12 @@ from transformers import (
     WhisperForConditionalGeneration,
     AutoProcessor,
     AutoModelForCausalLM,
-    AutoTokenizer
+    AutoTokenizer,
+    AutoConfig
 )
+
+from transformers import logging as hf_logging
+hf_logging.set_verbosity_error()
 
 from unified_dataset import UnifiedSpeechDataset
 from adapters import FCAdapter, TransformerAdapter
@@ -42,9 +49,9 @@ def parse_args():
                         help="Subset of dataset to use")
     parser.add_argument("--dataset_lang", type=str, default="ru",
                         help="Language of the dataset")
-    parser.add_argument("--learning_rate", type=float, default=1e-4,
+    parser.add_argument("--learning_rate", type=float, default=3e-4,
                         help="Learning rate for training")
-    parser.add_argument("--batch_size", type=int, default=8,
+    parser.add_argument("--batch_size", type=int, default=128,
                         help="Batch size for training")
     parser.add_argument("--epochs", type=int, default=50,
                         help="Number of epochs to train")
@@ -143,7 +150,9 @@ class ModelWrapper(nn.Module):
     def __init__(self, args, device="cpu"):
         super().__init__()
         asr_model = WhisperForConditionalGeneration.from_pretrained(args.asr_model_name)
-        self.llm_model = AutoModelForCausalLM.from_pretrained(args.llm_model_name)
+        llm_cfg = AutoConfig.from_pretrained(args.llm_model_name)
+        llm_cfg.attention_method = "flash_attention"
+        self.llm_model = AutoModelForCausalLM.from_pretrained(args.llm_model_name, config=llm_cfg)
 
         # Костыль
         try:
@@ -157,7 +166,7 @@ class ModelWrapper(nn.Module):
         self.llm_embed_layer = self.llm_model.model.embed_tokens
         self.llm_model.model.embed_tokens = torch.nn.Identity()
 
-        self.adapter = get_adapter(args.adapter_type, args)
+        self.adapter = get_adapter(args)
         print(f"Число параметров адаптера: {sum(p.numel() for p in self.adapter.parameters())}")
 
         self.asr_encoder = self.asr_encoder.to(device)
@@ -226,18 +235,20 @@ def load_adapter(model, rank, checkpoint_path):
 
 
 def setup(rank, world_size):
-    # https://pytorch.org/docs/stable/distributed.html#torch.distributed.init_process_group
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
 
     env_dict = {
-        key: os.environ[key]
-        for key in ("MASTER_ADDR", "MASTER_PORT", "RANK", "WORLD_SIZE")
+        "MASTER_ADDR": os.environ["MASTER_ADDR"],
+        "MASTER_PORT": os.environ["MASTER_PORT"],
+        "RANK": str(rank),
+        "WORLD_SIZE": str(world_size)
     }
     print(f"[{os.getpid()}] Initializing process group with: {env_dict}")
 
+    # Rest of the setup code remains the same
     torch.cuda.set_device(rank)
-    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
     print(
         f"[{os.getpid()}] world_size = {dist.get_world_size()}, "
         + f"rank = {dist.get_rank()}, backend={dist.get_backend()}"
@@ -253,7 +264,8 @@ def train_model(rank, world_size, args):
         token=args.token,
         lang=args.dataset_lang,
         split="train",
-        subset=args.dataset_subset
+        subset=args.dataset_subset,
+        batch_size=args.batch_size
     )
 
     asr_processor = AutoProcessor.from_pretrained(args.asr_model_name)
@@ -269,12 +281,14 @@ def train_model(rank, world_size, args):
         max_text_length=args.max_text_length
     )
 
+    sampler = DistributedSampler(dataset, shuffle=True)
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
         collate_fn=custom_collate,
-        shuffle=True,
-        sampler=DistributedSampler(dataset),
+        sampler=sampler,
+        pin_memory=True,
+        num_workers=2
     )
 
     model = ModelWrapper(args, device=rank)
@@ -283,10 +297,12 @@ def train_model(rank, world_size, args):
 
     global_step = 0
     for epoch in range(args.epochs):
+        sampler.set_epoch(epoch)
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch + 1}")
         loss_value = None
         for batch_idx, batch in enumerate(progress_bar):
             gc.collect()
+            torch.cuda.empty_cache() 
             used_memory = virtual_memory().used / (1024 ** 3)
             progress_bar.set_postfix(mem=f"{used_memory:.1f}GB")
 
@@ -300,6 +316,7 @@ def train_model(rank, world_size, args):
             loss.backward()
             optimizer.step()
             del outputs
+            torch.cuda.empty_cache() 
 
             progress_bar.set_postfix(
                 loss=loss.item(),
@@ -317,8 +334,18 @@ def train_model(rank, world_size, args):
                         predictions=pred_str,
                         references=label_str
                     )
-                    print(f"WER on step {global_step}: {wer}")
-                    writer.add_scalar("eval/wer", wer, global_step)
+
+                    all_wer = [torch.tensor([wer], dtype=torch.float32).to(rank)]
+                    dist.all_gather(all_wer, all_wer[0])
+                    
+                    if rank == 0:
+                        all_wer = torch.cat(all_wer, dim=0)
+                        avg_wer = all_wer.mean().item()
+                        print(f"Average WER on step {global_step}: {avg_wer}")
+                        writer.add_scalar("eval/avg_wer", avg_wer, global_step)
+                    
+                    del preds, label_str
+                    torch.cuda.empty_cache()
 
             global_step += 1
             progress_bar.set_postfix(loss=loss.item())
@@ -326,10 +353,10 @@ def train_model(rank, world_size, args):
             del logits, labels, loss
             gc.collect()
 
-        if rank not in [-1, 0]:
+        if rank == 0:
             torch.save({
                     'epoch': epoch,
-                    'adapter_state_dict': model.adapter.state_dict(),
+                    'adapter_state_dict': model.module.adapter.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'loss': loss_value,
                 },
@@ -339,14 +366,14 @@ def train_model(rank, world_size, args):
 
     if rank == 0:
         torch.save({
-                'adapter_state_dict': model.adapter.state_dict(),
+                'adapter_state_dict': model.module.adapter.state_dict(),
             },
-            os.path.join(args.model_save_path, "adapter_final.pt")
+            os.path.join(args.model_save_dir, "adapter_final.pt")
         )
     dist.barrier()
 
     writer.close()
-    print(f"Модель сохранена в {args.model_save_path}")
+    print(f"Модель сохранена в {args.model_save_dir}")
 
     dist.destroy_process_group()
 
@@ -367,13 +394,18 @@ def main():
         raise RuntimeError("Unable to run on GPU. Check your torch version via pip show torch.")
 
     world_size = torch.cuda.device_count()
-    assert world_size >= 2, f"Requires at least 2 GPUs to run, but got {world_size}."
+
     print(f"Run on {world_size} GPUs")
 
-    mp.spawn(train_model,
-             args=(world_size, args),
-             nprocs=world_size,
-             join=True)
+    if world_size > 1:
+        mp.spawn(
+            train_model,
+            args=(world_size, args),
+            nprocs=world_size,
+            join=True
+        )
+    else:
+        train_model(rank=0, world_size=1, args=args)
 
 
 if __name__ == "__main__":

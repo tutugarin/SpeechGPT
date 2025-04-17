@@ -3,7 +3,7 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 
 class FCAdapter(nn.Module):
-    def __init__(self, m=5, d_x=1280, fc_layer_dim=11264, llm_hidden_size=None):
+    def __init__(self, m=5, d_x=1280, fc_layer_dim=11264, llm_hidden_size=896):
         super().__init__()
         self.m = m
         self.conv = nn.Conv1d(
@@ -31,7 +31,7 @@ class FCAdapter(nn.Module):
 
 class TransformerAdapter(nn.Module):
     def __init__(self, d_x=1280, transform_dim=1024, num_heads=8, ff_dim=2048,
-                 num_layers=2, dropout=0.1, llm_hidden_size=None):
+                 num_layers=2, dropout=0.1, llm_hidden_size=896):
         super().__init__()
         self.input_proj = nn.Linear(d_x, transform_dim)
 
