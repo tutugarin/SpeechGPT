@@ -6,12 +6,13 @@ import gc
 
 class UnifiedSpeechDataset:
     def __init__(self, token: Optional[str] = None, lang: str = "ru",
-                 split: str = "train", subset: str = ''):
+                 split: str = "train", subset: str = '', batch_size: int = 128):
         self.token = token
         self.split = split
         self.subset = subset
         self.prompt_lang = lang
         self.datasets = {}
+        self.batch_size = batch_size
         self.task_datasets = {
             "asr": {},
             "translation": {}
@@ -247,10 +248,9 @@ class UnifiedSpeechDataset:
             yield dataset[i:min(i + batch_size, total_examples)]
 
     def __iter__(self):
-        batch_size = 16
         iterators = []
         for dataset in self.datasets.values():
-            iterators.append(self._batched_iterator(dataset, batch_size))
+            iterators.append(self._batched_iterator(dataset, self.batch_size))
         return itertools.chain.from_iterable(iterators)
 
     def __getitem__(self, index):
