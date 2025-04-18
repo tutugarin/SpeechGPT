@@ -172,7 +172,8 @@ class UnifiedSpeechDataset:
             self.cache_dir or "./cache",
             "datasets",
             dataset.replace("/", "___"),
-            lang_code
+            lang_code,
+            self.split
         )
 
         print('PATH', disk_path)
@@ -199,7 +200,7 @@ class UnifiedSpeechDataset:
                 dataset,
                 lang_code,
                 trust_remote_code=True,
-                split=f'{self.split}{slice}',
+                split=self.split,
                 token=self.token,
                 download_config=download_config
             )
