@@ -3,8 +3,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-os.environ["XLA_DISABLE_PLUGIN_LOAD"] = "1"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import gc
 import argparse
 import functools
@@ -20,6 +18,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from huggingface_hub import HfFolder
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data.distributed import DistributedSampler
 
@@ -38,6 +37,8 @@ hf_logging.set_verbosity_error()
 from unified_dataset import UnifiedSpeechDataset
 from adapters import FCAdapter, TransformerAdapter
 
+os.environ["XLA_DISABLE_PLUGIN_LOAD"] = "1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 MAX_DURATION = 30
 
@@ -45,7 +46,7 @@ MAX_DURATION = 30
 def parse_args():
     parser = argparse.ArgumentParser(description="Training script for speech model with adapter")
 
-    parser.add_argument("--dataset_subset", type=str, default="[:32]",
+    parser.add_argument("--dataset_subset", type=str, default="",
                         help="Subset of dataset to use")
     parser.add_argument("--dataset_lang", type=str, default="ru",
                         help="Language of the dataset")
@@ -87,6 +88,14 @@ def parse_args():
                         help="LLM hidden state size")
     parser.add_argument("--model_save_dir", type=str, default="./checkpoints",
                         help="Path to save the final model")
+    parser.add_argument(
+        "--local_files_only", action='store_true', default=False,
+        help="Use local files or not"
+    )
+    parser.add_argument(
+        "--cache_dir", type=str, default="./cache",
+        help="Directory to use as cache"
+    )
 
     return parser.parse_args()
 
@@ -149,10 +158,23 @@ def collate_fn(batch, asr_processor, llm_tokenizer, max_duration, max_text_lengt
 class ModelWrapper(nn.Module):
     def __init__(self, args, device="cpu"):
         super().__init__()
-        asr_model = WhisperForConditionalGeneration.from_pretrained(args.asr_model_name)
-        llm_cfg = AutoConfig.from_pretrained(args.llm_model_name)
+        asr_model = WhisperForConditionalGeneration.from_pretrained(
+            args.asr_model_name,
+            cache_dir=args.cache_dir,
+            local_files_only=args.local_files_only
+        )
+        llm_cfg = AutoConfig.from_pretrained(
+            args.llm_model_name,
+            cache_dir=args.cache_dir,
+            local_files_only=args.local_files_only
+        )
         llm_cfg.attention_method = "flash_attention"
-        self.llm_model = AutoModelForCausalLM.from_pretrained(args.llm_model_name, config=llm_cfg)
+        self.llm_model = AutoModelForCausalLM.from_pretrained(
+            args.llm_model_name,
+            config=llm_cfg,
+            cache_dir=args.cache_dir,
+            local_files_only=args.local_files_only
+        )
 
         # Костыль
         try:
@@ -246,9 +268,14 @@ def setup(rank, world_size):
     }
     print(f"[{os.getpid()}] Initializing process group with: {env_dict}")
 
-    # Rest of the setup code remains the same
-    torch.cuda.set_device(rank)
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    if torch.cuda.is_available():
+        torch.cuda.set_device(rank)
+        backend = "nccl"
+    else:
+        backend = "gloo"
+
+    dist.init_process_group(backend, rank=rank, world_size=world_size)
+
     print(
         f"[{os.getpid()}] world_size = {dist.get_world_size()}, "
         + f"rank = {dist.get_rank()}, backend={dist.get_backend()}"
@@ -265,11 +292,21 @@ def train_model(rank, world_size, args):
         lang=args.dataset_lang,
         split="train",
         subset=args.dataset_subset,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        cache_dir=args.cache_dir,
+        local_files_only=args.local_files_only
     )
 
-    asr_processor = AutoProcessor.from_pretrained(args.asr_model_name)
-    llm_tokenizer = AutoTokenizer.from_pretrained(args.llm_model_name)
+    asr_processor = AutoProcessor.from_pretrained(
+        args.asr_model_name,
+        cache_dir=args.cache_dir,
+        local_files_only=args.local_files_only
+    )
+    llm_tokenizer = AutoTokenizer.from_pretrained(
+        args.llm_model_name,
+        cache_dir=args.cache_dir,
+        local_files_only=args.local_files_only
+    )
     llm_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     args.pad_token_id = llm_tokenizer.pad_token_id
 
@@ -291,8 +328,14 @@ def train_model(rank, world_size, args):
         num_workers=2
     )
 
-    model = ModelWrapper(args, device=rank)
-    model = DistributedDataParallel(model, device_ids=[rank])
+    device = rank if torch.cuda.is_available() else 'cpu'
+    model = ModelWrapper(args, device=device)
+
+    if torch.cuda.is_available():
+        model = DistributedDataParallel(model, device_ids=[rank])
+    else:
+        model = DistributedDataParallel(model)
+
     optimizer = AdamW(model.parameters(), lr=args.learning_rate)
 
     global_step = 0
@@ -388,10 +431,19 @@ def main():
         https://github.com/pytorch/examples/blob/main/distributed/ddp-tutorial-series/multinode.py
     '''
     args = parse_args()
+
+    os.environ["HF_HOME"] = args.cache_dir
+    os.environ["HF_DATASETS_CACHE"] = args.cache_dir
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["HF_DATASETS_OFFLINE"] = "1"
+    HfFolder.save_token(args.token)
+
+    print(f"Use local files only: {args.local_files_only}")
+
     os.makedirs(args.model_save_dir, exist_ok=True)
 
     if not torch.cuda.is_available():
-        raise RuntimeError("Unable to run on GPU. Check your torch version via pip show torch.")
+        print("CUDA is not available. Running on CPU.")
 
     world_size = torch.cuda.device_count()
 

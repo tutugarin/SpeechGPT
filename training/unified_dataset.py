@@ -1,4 +1,6 @@
-from datasets import Dataset, load_dataset, concatenate_datasets, Audio
+from datasets import Dataset, load_dataset, concatenate_datasets, Audio, DownloadConfig
+from datasets import load_dataset, load_from_disk
+import os
 from typing import Optional, List, Dict
 import itertools
 import gc
@@ -6,23 +8,24 @@ import gc
 
 class UnifiedSpeechDataset:
     def __init__(self, token: Optional[str] = None, lang: str = "ru",
-                 split: str = "train", subset: str = '', batch_size: int = 128):
+                 split: str = "train", subset: str = '', batch_size: int = 128,
+                 cache_dir: Optional[str] = None, local_files_only: bool = True):
         self.token = token
         self.split = split
         self.subset = subset
         self.prompt_lang = lang
         self.datasets = {}
         self.batch_size = batch_size
+        self.cache_dir = cache_dir
+        self.local_files_only = local_files_only
         self.task_datasets = {
             "asr": {},
             "translation": {}
         }
-
         self._language_names = {
             'ru': {'ru': 'русский', 'en': 'Russian'},
             'en': {'ru': 'английский', 'en': 'English'}
         }
-
         self._load(lang)
 
     def _load(self, lang: str = "ru"):
@@ -165,13 +168,53 @@ class UnifiedSpeechDataset:
             print(f"Добавлен датасет CoVoST2 с {len(dataset)} примерами")
 
     def _load_dataset_from_hf(self, dataset: str, lang_code: str, slice: Optional[str] = ''):
-        return load_dataset(
-            dataset,
-            lang_code,
-            trust_remote_code=True,
-            split=f'{self.split}{slice}',
-            token=self.token
+        disk_path = os.path.join(
+            self.cache_dir or "./cache",
+            "datasets",
+            dataset.replace("/", "___"),
+            lang_code
         )
+
+        print('PATH', disk_path)
+
+        if os.path.exists(disk_path):
+            print(f"Загрузка датасета с диска: {disk_path}")
+            return load_from_disk(disk_path)
+
+        if self.local_files_only:
+            raise FileNotFoundError(
+                f"Offline режим включён, но датасет '{dataset}/{lang_code}' не найден в '{disk_path}'. "
+                "Пожалуйста, сначала скачайте датасет онлайн или отключите --local_files_only."
+            )
+
+        print(f"Загрузка датасета из Hugging Face Hub: {dataset} ({lang_code})")
+        download_config = DownloadConfig(
+            cache_dir=self.cache_dir,
+            resume_download=True,
+            local_files_only=self.local_files_only
+        )
+        
+        try:
+            ds = load_dataset(
+                dataset,
+                lang_code,
+                trust_remote_code=True,
+                split=f'{self.split}{slice}',
+                token=self.token,
+                download_config=download_config
+            )
+            
+            try:
+                ds.save_to_disk(disk_path)
+                print(f"Датасет успешно сохранен на диск: {disk_path}")
+            except Exception as e:
+                print(f"Предупреждение: не удалось сохранить датасет на диск: {e}")
+                print(f"Продолжаем работу без сохранения на диск.")
+            
+            return ds
+        except Exception as e:
+            print(f"Ошибка загрузки датасета {dataset}/{lang_code}: {e}")
+            raise
 
     def get_unified_dataset(self, task: Optional[str] = None) -> Dataset:
         if task is not None:

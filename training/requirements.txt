@@ -1,0 +1,15 @@
+transformers~=4.51.1
+datasets==3.0.1
+soundfile~=0.13.1
+evaluate~=0.4.3
+jiwer~=3.1.0
+torchinfo~=1.8.0
+numpy~=1.26.4
+pandas~=2.2.3
+huggingface-hub~=0.30.2
+requests~=2.32.3
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.5.1
+torchvision==0.20.1
+torchaudio==2.5.1
+
