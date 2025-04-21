@@ -168,60 +168,69 @@ class UnifiedSpeechDataset:
             print(f"Добавлен датасет CoVoST2 с {len(dataset)} примерами")
 
     def _load_dataset_from_hf(self, dataset: str, lang_code: str, slice: Optional[str] = ''):
-        disk_path = os.path.join(
-            self.cache_dir or "./cache",
-            "datasets",
-            dataset.replace("/", "___"),
+        return load_dataset(
+            dataset,
             lang_code,
-            self.split
+            trust_remote_code=True,
+            split=f'{self.split}{slice}',
+            token=self.token
         )
+    
+    # def _load_dataset_from_hf(self, dataset: str, lang_code: str, slice: Optional[str] = ''):
+    #     disk_path = os.path.join(
+    #         self.cache_dir or "./cache",
+    #         "datasets",
+    #         dataset.replace("/", "___"),
+    #         lang_code,
+    #         self.split
+    #     )
 
-        print('PATH', disk_path)
+    #     print('PATH', disk_path)
 
-        if os.path.exists(disk_path):
-            print(f"Загрузка датасета с диска: {disk_path}")
-            ds = load_from_disk(disk_path)
-            if slice:
-                return ds.select(range(int(slice)))
-            return ds
+    #     if os.path.exists(disk_path):
+    #         print(f"Загрузка датасета с диска: {disk_path}")
+    #         ds = load_from_disk(disk_path)
+    #         if slice:
+    #             return ds.select(range(int(slice)))
+    #         return ds
 
-        if self.local_files_only:
-            raise FileNotFoundError(
-                f"Offline режим включён, но датасет '{dataset}/{lang_code}' не найден в '{disk_path}'. "
-                "Пожалуйста, сначала скачайте датасет онлайн или отключите --local_files_only."
-            )
+    #     if self.local_files_only:
+    #         raise FileNotFoundError(
+    #             f"Offline режим включён, но датасет '{dataset}/{lang_code}' не найден в '{disk_path}'. "
+    #             "Пожалуйста, сначала скачайте датасет онлайн или отключите --local_files_only."
+    #         )
 
-        print(f"Загрузка датасета из Hugging Face Hub: {dataset} ({lang_code})")
-        download_config = DownloadConfig(
-            cache_dir=self.cache_dir,
-            resume_download=True,
-            local_files_only=self.local_files_only
-        )
+    #     print(f"Загрузка датасета из Hugging Face Hub: {dataset} ({lang_code})")
+    #     download_config = DownloadConfig(
+    #         cache_dir=self.cache_dir,
+    #         resume_download=True,
+    #         local_files_only=self.local_files_only
+    #     )
         
-        try:
-            ds = load_dataset(
-                dataset,
-                lang_code,
-                trust_remote_code=True,
-                split=self.split,
-                token=self.token,
-                download_config=download_config
-            )
+    #     try:
+    #         ds = load_dataset(
+    #             dataset,
+    #             lang_code,
+    #             trust_remote_code=True,
+    #             split=self.split,
+    #             token=self.token,
+    #             download_config=download_config
+    #         )
             
-            try:
-                ds.save_to_disk(disk_path)
-                print(f"Датасет успешно сохранен на диск: {disk_path}")
-            except Exception as e:
-                print(f"Предупреждение: не удалось сохранить датасет на диск: {e}")
-                print(f"Продолжаем работу без сохранения на диск.")
+    #         try:
+    #             ds.save_to_disk(disk_path)
+    #             print(f"Датасет успешно сохранен на диск: {disk_path}")
+    #         except Exception as e:
+    #             print(f"Предупреждение: не удалось сохранить датасет на диск: {e}")
+    #             print(f"Продолжаем работу без сохранения на диск.")
             
-            ds = load_from_disk(disk_path)
-            if slice:
-                return ds.select(range(int(slice)))
-            return ds
-        except Exception as e:
-            print(f"Ошибка загрузки датасета {dataset}/{lang_code}: {e}")
-            raise
+    #         ds = load_from_disk(disk_path)
+    #         if slice:
+    #             return ds.select(range(int(slice)))
+    #         return ds
+    #     except Exception as e:
+    #         print(f"Ошибка загрузки датасета {dataset}/{lang_code}: {e}")
+    #         raise
 
     def get_unified_dataset(self, task: Optional[str] = None) -> Dataset:
         if task is not None:

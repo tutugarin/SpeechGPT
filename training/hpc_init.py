@@ -15,10 +15,10 @@ def main():
     parser = argparse.ArgumentParser(
         description="Preload datasets and models to local cache"
     )
-    parser.add_argument(
-        "--cache_dir", type=str, default="./cache",
-        help="Directory to use as cache"
-    )
+    # parser.add_argument(
+    #     "--cache_dir", type=str, default="./cache",
+    #     help="Directory to use as cache"
+    # )
     parser.add_argument(
         "--local_files_only", action='store_true', default=False,
         help="Use local files or not"
@@ -45,36 +45,36 @@ def main():
     )
     args = parser.parse_args()
 
-    os.environ["HF_HOME"] = args.cache_dir
-    os.environ["HF_DATASETS_CACHE"] = args.cache_dir
+    # os.environ["HF_HOME"] = args.cache_dir
+    # os.environ["HF_DATASETS_CACHE"] = args.cache_dir
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.environ["HF_DATASETS_OFFLINE"] = "1"
     HfFolder.save_token(args.token)
 
     print(f"local_files_only: {args.local_files_only}")
 
-    os.makedirs(args.cache_dir, exist_ok=True)
+    # os.makedirs(args.cache_dir, exist_ok=True)
 
     from transformers import WhisperForConditionalGeneration, AutoProcessor
-    print(f"Loading ASR model {args.asr_model_name} into {args.cache_dir}...")
+    print(f"Loading ASR model {args.asr_model_name}...")
     WhisperForConditionalGeneration.from_pretrained(
         args.asr_model_name,
-        cache_dir=args.cache_dir,
+        # cache_dir=args.cache_dir,
         local_files_only=args.local_files_only
     )
     AutoProcessor.from_pretrained(
         args.asr_model_name,
-        cache_dir=args.cache_dir,
+        # cache_dir=args.cache_dir,
         local_files_only=args.local_files_only
     )
 
     print("ASR model and processor cached.")
 
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-    print(f"Loading LLM model {args.llm_model_name} into {args.cache_dir}...")
+    print(f"Loading LLM model {args.llm_model_name}...")
     llm_cfg = AutoConfig.from_pretrained(
         args.llm_model_name,
-        cache_dir=args.cache_dir,
+        # cache_dir=args.cache_dir,
         local_files_only=args.local_files_only
     )
     llm_cfg.use_sliding_window = False
@@ -82,13 +82,13 @@ def main():
     AutoModelForCausalLM.from_pretrained(
         args.llm_model_name,
         config=llm_cfg,
-        cache_dir=args.cache_dir,
+        # cache_dir=args.cache_dir,
         local_files_only=args.local_files_only,
         attn_implementation="sdpa"
     )
     AutoTokenizer.from_pretrained(
         args.llm_model_name,
-        cache_dir=args.cache_dir,
+        # cache_dir=args.cache_dir,
         local_files_only=args.local_files_only
     )
     print("LLM model, config and tokenizer cached.")
@@ -101,7 +101,7 @@ def main():
         split="train",
         subset=args.dataset_subset,
         batch_size=1,
-        cache_dir=args.cache_dir,
+        # cache_dir=args.cache_dir,
         local_files_only=args.local_files_only
     )
 
@@ -111,7 +111,7 @@ def main():
         split="test",
         subset=args.dataset_subset,
         batch_size=1,
-        cache_dir=args.cache_dir,
+        # cache_dir=args.cache_dir,
         local_files_only=args.local_files_only
     )
 

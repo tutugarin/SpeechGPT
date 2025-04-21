@@ -324,7 +324,8 @@ def train_model(rank, world_size, args):
         batch_size=args.batch_size,
         collate_fn=custom_collate,
         sampler=sampler,
-        pin_memory=True
+        pin_memory=True,
+        num_workers=4 * torch.cuda.device_count() if torch.cuda.is_available() else 4
     )
     print(f"Количество объектов dataloader: {len(dataloader.dataset)}")
 
