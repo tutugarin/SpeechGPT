@@ -77,11 +77,14 @@ def main():
         cache_dir=args.cache_dir,
         local_files_only=args.local_files_only
     )
+    llm_cfg.use_sliding_window = False
+    llm_cfg.sliding_window = None
     AutoModelForCausalLM.from_pretrained(
         args.llm_model_name,
         config=llm_cfg,
         cache_dir=args.cache_dir,
-        local_files_only=args.local_files_only
+        local_files_only=args.local_files_only,
+        attn_implementation="sdpa"
     )
     AutoTokenizer.from_pretrained(
         args.llm_model_name,

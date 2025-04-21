@@ -180,7 +180,10 @@ class UnifiedSpeechDataset:
 
         if os.path.exists(disk_path):
             print(f"Загрузка датасета с диска: {disk_path}")
-            return load_from_disk(disk_path)
+            ds = load_from_disk(disk_path)
+            if slice:
+                return ds.select(range(int(slice)))
+            return ds
 
         if self.local_files_only:
             raise FileNotFoundError(
@@ -212,6 +215,9 @@ class UnifiedSpeechDataset:
                 print(f"Предупреждение: не удалось сохранить датасет на диск: {e}")
                 print(f"Продолжаем работу без сохранения на диск.")
             
+            ds = load_from_disk(disk_path)
+            if slice:
+                return ds.select(range(int(slice)))
             return ds
         except Exception as e:
             print(f"Ошибка загрузки датасета {dataset}/{lang_code}: {e}")

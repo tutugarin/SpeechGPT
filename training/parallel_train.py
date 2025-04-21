@@ -80,8 +80,6 @@ def parse_args():
                         help="ASR model name")
     parser.add_argument("--llm_model_name", type=str, default="Qwen/Qwen2-0.5B",
                         help="LLM model name")
-    parser.add_argument("--device", type=str, default="cpu",
-                        help="Device to use (cpu or cuda)")
     parser.add_argument("--eval_steps", type=int, default=5,
                         help="Steps between evaluations")
     parser.add_argument("--llm_hidden_size", type=int, default=896,
@@ -168,12 +166,14 @@ class ModelWrapper(nn.Module):
             cache_dir=args.cache_dir,
             local_files_only=args.local_files_only
         )
-        llm_cfg.attention_method = "flash_attention"
+        llm_cfg.use_sliding_window = False
+        llm_cfg.sliding_window = None
         self.llm_model = AutoModelForCausalLM.from_pretrained(
             args.llm_model_name,
             config=llm_cfg,
             cache_dir=args.cache_dir,
-            local_files_only=args.local_files_only
+            local_files_only=args.local_files_only,
+            attn_implementation="sdpa"
         )
 
         # Костыль
@@ -258,7 +258,7 @@ def load_adapter(model, rank, checkpoint_path):
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    os.environ['MASTER_PORT'] = '23551'
 
     env_dict = {
         "MASTER_ADDR": os.environ["MASTER_ADDR"],
@@ -324,20 +324,21 @@ def train_model(rank, world_size, args):
         batch_size=args.batch_size,
         collate_fn=custom_collate,
         sampler=sampler,
-        pin_memory=True,
-        num_workers=2
+        pin_memory=True
     )
+    print(f"Количество объектов dataloader: {len(dataloader.dataset)}")
 
     device = rank if torch.cuda.is_available() else 'cpu'
     model = ModelWrapper(args, device=device)
 
     if torch.cuda.is_available():
-        model = DistributedDataParallel(model, device_ids=[rank])
+        model = DistributedDataParallel(model, device_ids=[rank], find_unused_parameters=True)
     else:
         model = DistributedDataParallel(model)
 
     optimizer = AdamW(model.parameters(), lr=args.learning_rate)
 
+    print("Начинаю обучение")
     global_step = 0
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
@@ -378,17 +379,23 @@ def train_model(rank, world_size, args):
                         references=label_str
                     )
 
-                    all_wer = [torch.tensor([wer], dtype=torch.float32).to(rank)]
-                    dist.all_gather(all_wer, all_wer[0])
+                    if device != 'cpu':
+                        all_wer = [torch.tensor([wer], dtype=torch.float32).to(rank)]
+                        dist.all_gather(all_wer, all_wer[0])
+                        
+                        if rank == 0:
+                            all_wer = torch.cat(all_wer, dim=0)
+                            avg_wer = all_wer.mean().item()
+                            print(f"Average WER on step {global_step}: {avg_wer}")
+                            writer.add_scalar("eval/avg_wer", avg_wer, global_step)
+                        
+                        torch.cuda.empty_cache()
+                    else:
+                        print(f"WER on step {global_step}: {wer}")
+                        if writer is not None:
+                            writer.add_scalar("eval/wer", wer, global_step)
                     
-                    if rank == 0:
-                        all_wer = torch.cat(all_wer, dim=0)
-                        avg_wer = all_wer.mean().item()
-                        print(f"Average WER on step {global_step}: {avg_wer}")
-                        writer.add_scalar("eval/avg_wer", avg_wer, global_step)
-                    
-                    del preds, label_str
-                    torch.cuda.empty_cache()
+                    del preds, pred_str, label_str
 
             global_step += 1
             progress_bar.set_postfix(loss=loss.item())
@@ -419,6 +426,8 @@ def train_model(rank, world_size, args):
     print(f"Модель сохранена в {args.model_save_dir}")
 
     dist.destroy_process_group()
+
+    print("Обучение завершено")
 
 
 def main():
