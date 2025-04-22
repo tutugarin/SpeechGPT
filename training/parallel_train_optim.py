@@ -17,12 +17,15 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.cuda.amp import autocast, GradScaler
 from torch.utils.checkpoint import checkpoint
+from transformers import get_linear_schedule_with_warmup
+from datetime import datetime
 
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from huggingface_hub import HfFolder
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data.distributed import DistributedSampler
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 from transformers import (
@@ -41,10 +44,10 @@ from adapters import FCAdapter, TransformerAdapter
 
 os.environ["XLA_DISABLE_PLUGIN_LOAD"] = "1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:128"  # Prevent memory fragmentation
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:128"
 
 torch.backends.cuda.enable_mem_efficient_sdp(True)
-torch.backends.cudnn.benchmark = True  # Enable cuDNN auto-tuner
+torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision('high')
 
 MAX_DURATION = 30
@@ -122,7 +125,7 @@ def parse_args():
         help="Number of data loading workers (default: 2*GPU count)"
     )
     parser.add_argument(
-        "--warmup_steps", type=int, default=100,
+        "--warmup_steps", type=int, default=10,
         help="Number of warmup steps for learning rate scheduler"
     )
     parser.add_argument(
@@ -151,13 +154,10 @@ def get_adapter(args):
     else:
         raise Exception(f"Некорректный тип адаптера: {args.adapter_type}")
 
-
-# Optimized collate function for better CPU utilization
 def collate_fn(batch, asr_processor, llm_tokenizer, max_duration, max_text_length):
     if len(batch) == 0:
         return None
     
-    # Process audio in parallel for better CPU utilization
     audio = [x['speech_input'] for x in batch]
     audio_inputs = asr_processor(
         audio=audio,
@@ -168,7 +168,6 @@ def collate_fn(batch, asr_processor, llm_tokenizer, max_duration, max_text_lengt
         return_tensors="pt"
     )
 
-    # Process text inputs in parallel
     input_text = [f"{asr_processor.tokenizer.eos_token}{x['text_prompt']}" for x in batch]
     text_inputs = llm_tokenizer(
         input_text,
@@ -178,7 +177,6 @@ def collate_fn(batch, asr_processor, llm_tokenizer, max_duration, max_text_lengt
         return_tensors="pt"
     )
 
-    # Process text outputs in parallel
     output_text = [f"{asr_processor.tokenizer.eos_token}{x['text_response']}" for x in batch]
     text_outputs = llm_tokenizer(
         output_text,
@@ -201,7 +199,6 @@ class ModelWrapper(nn.Module):
         self.device = device
         self.using_cuda = torch.cuda.is_available()
         
-        # Load ASR encoder with optimized settings
         asr_config = AutoConfig.from_pretrained(
             args.asr_model_name,
             # cache_dir=args.cache_dir,
@@ -215,18 +212,19 @@ class ModelWrapper(nn.Module):
             torch_dtype=torch.float16 if args.fp16 and self.using_cuda else torch.float32
         )
         
-        # Optimize LLM config for better performance
         llm_cfg = AutoConfig.from_pretrained(
             args.llm_model_name,
             # cache_dir=args.cache_dir,
             local_files_only=args.local_files_only
         )
-        llm_cfg.use_cache = False  # Disable KV-cache to save memory
-        llm_cfg.gradient_checkpointing = True  # Enable gradient checkpointing
-        llm_cfg.use_sliding_window = True  # Enable sliding window attention
-        llm_cfg.sliding_window = 256  # Set sliding window size
+        llm_cfg.use_cache = False
+        llm_cfg.gradient_checkpointing = True
+        # llm_cfg.use_sliding_window = True
+        # llm_cfg.sliding_window = 256
+
+        llm_cfg.use_sliding_window = False
+        llm_cfg.sliding_window = None
         
-        # Load LLM with optimized settings
         self.llm_model = AutoModelForCausalLM.from_pretrained(
             args.llm_model_name,
             config=llm_cfg,
@@ -236,35 +234,27 @@ class ModelWrapper(nn.Module):
             torch_dtype=torch.float16 if args.fp16 and self.using_cuda else torch.float32
         )
 
-        # Store pad token ID
         if not hasattr(args, 'pad_token_id') or args.pad_token_id is None:
             raise ValueError("pad_token_id cannot be None")
         self.pad_token_id = args.pad_token_id
 
-        # Extract only needed components
         self.asr_encoder = asr_model.model.encoder
         self.llm_embed_layer = self.llm_model.model.embed_tokens
         self.llm_model.model.embed_tokens = torch.nn.Identity()
 
-        # Clear memory
         del asr_model
         if self.using_cuda:
             torch.cuda.empty_cache()
 
-        # Initialize adapter with proper device placement
         self.adapter = get_adapter(args)
         print(f"Adapter parameter count: {sum(p.numel() for p in self.adapter.parameters())}")
 
-        # Move components to device efficiently
         self._move_to_device()
-
-        # Freeze layers
         self._freeze_parameters()
 
     def _move_to_device(self):
         """Move model components to device efficiently"""
         if self.using_cuda:
-            # Move components one by one with memory clearing between
             self.asr_encoder = self.asr_encoder.to(self.device)
             torch.cuda.empty_cache()
             
@@ -280,28 +270,23 @@ class ModelWrapper(nn.Module):
 
     def _freeze_parameters(self):
         """Freeze all parameters except adapter"""
-        # Freeze ASR encoder
         for param in self.asr_encoder.parameters():
             param.requires_grad = False
         self.asr_encoder.eval()
         
-        # Freeze LLM embedding layer
         for param in self.llm_embed_layer.parameters():
             param.requires_grad = False
         
-        # Freeze LLM
         for param in self.llm_model.parameters():
             param.requires_grad = False
         self.llm_model.eval()
         
-        # Ensure adapter is trainable
         for param in self.adapter.parameters():
             param.requires_grad = True
 
     def _process_encoder_outputs(self, audio_features):
         """Process encoder outputs with memory optimization"""
         with torch.no_grad():
-            # Use non-blocking transfer for better GPU utilization
             if self.using_cuda:
                 audio_features = audio_features.to(self.device, non_blocking=True)
                 
@@ -323,7 +308,6 @@ class ModelWrapper(nn.Module):
         if self.pad_token_id is None:
             raise ValueError("Use set_pad_token_id method")
 
-        # Non-blocking transfer for better GPU utilization
         audio_features = batch["audio_features"].to(self.device, non_blocking=True).float()
         text_inputs = batch["text_inputs"].to(self.device, non_blocking=True).long()
         text_outputs = batch["text_outputs"].to(self.device, non_blocking=True).long()
@@ -332,30 +316,24 @@ class ModelWrapper(nn.Module):
 
     def _forward_impl(self, audio_features, text_inputs, text_outputs):
         """Optimized implementation of forward pass"""
-        # Process encoder outputs
         encoder_embed = self._process_encoder_outputs(audio_features)
         
-        # Process input embeddings
         llm_first_embed = self._process_input_embeddings(text_inputs)
         
-        # Clear variables to save memory
         del audio_features, text_inputs
         if self.using_cuda:
             torch.cuda.empty_cache()
 
-        # Process through adapter (trainable part)
         adapter_out = self.adapter(encoder_embed)
         del encoder_embed
         if self.using_cuda:
             torch.cuda.empty_cache()
 
-        # Combine embeddings efficiently
         combined_embeds = torch.cat([adapter_out, llm_first_embed], dim=1)
         del llm_first_embed, adapter_out
         if self.using_cuda:
             torch.cuda.empty_cache()
 
-        # Create attention mask efficiently
         combined_seq_length = combined_embeds.size(1)
         attention_mask = torch.ones(
             (combined_embeds.size(0), combined_seq_length), 
@@ -363,20 +341,17 @@ class ModelWrapper(nn.Module):
             dtype=torch.long
         )
 
-        # Prepare labels efficiently
         labels = text_outputs[:, 1:combined_seq_length + 1].clone()
         if labels.size(1) != combined_seq_length:
             pad_size = combined_seq_length - labels.size(1)
             labels = torch.nn.functional.pad(labels, (0, pad_size), value=self.pad_token_id)
         
-        # Forward pass through LLM
         outputs = self.llm_model(
             inputs_embeds=combined_embeds,
             attention_mask=attention_mask,
             labels=labels
         )
 
-        # Clean up memory
         del combined_embeds, attention_mask
         if self.using_cuda:
             torch.cuda.empty_cache()
@@ -445,11 +420,8 @@ def setup(rank, world_size):
 
     dist.init_process_group(backend, rank=rank, world_size=world_size)
     
-    # Set optimal process-level settings
     if torch.cuda.is_available():
-        
-        # Optimize thread allocation
-        torch.set_num_threads(4)  # Limit CPU threads per process
+        torch.set_num_threads(4)
 
     print(
         f"[{os.getpid()}] world_size = {dist.get_world_size()}, "
@@ -459,10 +431,8 @@ def setup(rank, world_size):
 
 def train_model(rank, world_size, args):
     """Main training function with optimized performance"""
-    # Setup distributed training
     setup(rank, world_size)
     
-    # Set up profiling if requested
     if args.profile and rank == 0:
         prof = torch.profiler.profile(
             activities=[
@@ -486,20 +456,16 @@ def train_model(rank, world_size, args):
     else:
         prof = None
 
-    # Set up mixed precision training
     scaler = GradScaler() if args.fp16 and torch.cuda.is_available() else None
-    
-    # Set up tensorboard writer
     writer = SummaryWriter(log_dir=args.log_dir) if rank == 0 else None
     
-    # Initialize throughput tracker
+
     throughput_tracker = ThroughputTracker(
         batch_size=args.batch_size, 
         world_size=world_size,
         log_interval=10
     )
 
-    # Set up dataset with better caching options
     dataset = UnifiedSpeechDataset(
         token=args.token,
         lang=args.dataset_lang,
@@ -510,7 +476,6 @@ def train_model(rank, world_size, args):
         local_files_only=args.local_files_only
     )
 
-    # Load tokenizers and processors
     asr_processor = AutoProcessor.from_pretrained(
         args.asr_model_name,
         # cache_dir=args.cache_dir,
@@ -523,12 +488,10 @@ def train_model(rank, world_size, args):
         local_files_only=args.local_files_only
     )
     
-    # Add pad token if needed
     if llm_tokenizer.pad_token is None:
         llm_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     args.pad_token_id = llm_tokenizer.pad_token_id
 
-    # Create optimized collate function
     custom_collate = functools.partial(
         collate_fn,
         asr_processor=asr_processor,
@@ -537,7 +500,6 @@ def train_model(rank, world_size, args):
         max_text_length=args.max_text_length
     )
 
-    # Set up optimized data loading
     num_workers = args.num_workers if args.num_workers is not None else (8 if torch.cuda.is_available() else 4)
     sampler = DistributedSampler(dataset, shuffle=True)
     dataloader = DataLoader(
@@ -545,31 +507,28 @@ def train_model(rank, world_size, args):
         batch_size=args.batch_size,
         collate_fn=custom_collate,
         sampler=sampler,
-        pin_memory=True,  # Enable pinned memory for faster transfers
-        num_workers=num_workers,  # Optimize worker count
-        prefetch_factor=args.prefetch_factor,  # Load batches in advance
-        persistent_workers=True,  # Keep workers alive between epochs
+        pin_memory=True,
+        num_workers=num_workers,
+        prefetch_factor=args.prefetch_factor,
+        persistent_workers=True,
         drop_last=False
     )
     print(f"Dataset size: {len(dataloader.dataset)}")
 
-    # Set up device
     device = rank if torch.cuda.is_available() else 'cpu'
     model = ModelWrapper(args, device=device)
 
-    # Set up DDP with optimized settings
     if torch.cuda.is_available():
         model = DistributedDataParallel(
             model, 
             device_ids=[rank], 
             find_unused_parameters=True,
-            static_graph=False,  # Set to True if possible for better performance
-            bucket_cap_mb=25  # Optimize communication bucket size
+            static_graph=False,
+            bucket_cap_mb=25
         )
     else:
         model = DistributedDataParallel(model)
 
-    # Set up optimizer with weight decay
     no_decay = ["bias", "LayerNorm.weight"]
     optimizer_grouped_parameters = [
         {
@@ -588,44 +547,58 @@ def train_model(rank, world_size, args):
         betas=(0.9, 0.999)
     )
 
-    # Start training with optimized flow
+    num_update_steps_per_epoch = (
+        len(dataloader) // args.gradient_accumulation_steps
+    )
+    total_training_steps = num_update_steps_per_epoch * args.epochs
+
+    scheduler_warmup = get_linear_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=args.warmup_steps,
+        num_training_steps=total_training_steps
+    )
+
+    scheduler_plateau = ReduceLROnPlateau(
+        optimizer,
+        mode='min',
+        factor=0.5,
+        patience=2,
+        verbose=True,
+        min_lr=1e-5
+    )
+
+    warmup_complete = False
+    warmup_steps_counter = 0
+
+    print('Schedulers inited')
+
     print("Starting training")
     global_step = 0
     for epoch in range(args.epochs):
-        # Set epoch for sampler
         model.train()
         sampler.set_epoch(epoch)
         
-        # Reset throughput tracker
         throughput_tracker.reset()
         
-        # Initialize progress bar
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch + 1}")
         loss_value = None
         
-        # Clear optimizer state
         optimizer.zero_grad(set_to_none=True)
         
-        # Track accumulated loss for gradient accumulation
         accumulated_loss = 0
 
-        # Main training loop
         for batch_idx, batch in enumerate(progress_bar):
-            # Skip empty batches
             if batch is None:
                 continue
                 
-            # Clear memory at start of batch
             if batch_idx % 10 == 0:
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             
-            # Update throughput tracker  
             throughput_tracker.update()
             
             try:
-                # Forward pass with mixed precision
                 if scaler is not None:
                     with autocast():
                         outputs, labels = model(batch)
@@ -638,19 +611,15 @@ def train_model(rank, world_size, args):
                     loss.backward()
                     accumulated_loss += loss.item() * args.gradient_accumulation_steps
 
-                # Only store logits for evaluation
                 logits = None
                 if (batch_idx + 1) % args.gradient_accumulation_steps == 0:
                     logits = outputs.logits.detach()
                 
-                # Clean up memory
                 del outputs, loss
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
-                # Update weights on gradient accumulation step
                 if (batch_idx + 1) % args.gradient_accumulation_steps == 0 or batch_idx == len(progress_bar) - 1:
-                    # Apply gradient clipping
                     if scaler is not None:
                         scaler.unscale_(optimizer)
                         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -660,35 +629,36 @@ def train_model(rank, world_size, args):
                         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                         optimizer.step()
                     
-                    # Zero gradients
+                    if not warmup_complete:
+                        scheduler_warmup.step()
+                        warmup_steps_counter += 1
+                        if warmup_steps_counter >= args.warmup_steps:
+                            warmup_complete = True
+                            print(f"Warmup complete after {warmup_steps_counter} steps. Switching to plateau scheduler.")
+
                     optimizer.zero_grad(set_to_none=True)
                     
-                    # Log metrics
                     if rank == 0 and writer is not None:
                         writer.add_scalar("train/loss", accumulated_loss, global_step)
+                        writer.add_scalar("train/lr", optimizer.param_groups[0]['lr'], global_step)
                         if throughput_tracker.should_log():
                             throughput = throughput_tracker.get_throughput()
                             writer.add_scalar("performance/throughput", throughput, global_step)
                     
-                    # Update loss value
                     loss_value = accumulated_loss
                     accumulated_loss = 0
                     
-                    # Update progress bar
                     progress_bar.set_postfix(
                         loss=f"{loss_value:.4f}",
                         throughput=f"{throughput_tracker.get_throughput():.1f} samples/s",
                         mem=f"{torch.cuda.max_memory_allocated()/1e9:.1f}GB" if torch.cuda.is_available() else "N/A"
                     )
 
-                    # Evaluate if needed
                     if global_step % args.eval_steps == 0 and logits is not None and global_step > 0:
                         with torch.no_grad():
-                            # Update profiler if enabled
                             if prof is not None and rank == 0:
                                 prof.step()
                                 
-                            # Compute WER
                             preds = torch.argmax(logits, dim=-1)
                             pred_str = llm_tokenizer.batch_decode(preds, skip_special_tokens=True)
                             label_str = llm_tokenizer.batch_decode(labels.detach(), skip_special_tokens=True)
@@ -698,28 +668,27 @@ def train_model(rank, world_size, args):
                             )
 
                             if device != 'cpu':
-                                all_wer = [torch.tensor([wer], dtype=torch.float32).to(rank)]
-                                dist.all_gather(all_wer, all_wer[0])
-                                
-                                if rank == 0:
-                                    all_wer = torch.cat(all_wer, dim=0)
-                                    avg_wer = all_wer.mean().item()
-                                    print(f"Average WER on step {global_step}: {avg_wer}")
-                                    if writer is not None:
-                                        writer.add_scalar("eval/avg_wer", avg_wer, global_step)
+                                local = torch.tensor([wer], dtype=torch.float32).to(rank)
+                                gathered = [torch.zeros_like(local) for _ in range(world_size)]
+                                dist.all_gather(gathered, local)
+                                avg_wer = torch.stack(gathered).mean().item()
                             else:
-                                print(f"WER on step {global_step}: {wer}")
-                                if rank == 0 and writer is not None:
-                                    writer.add_scalar("eval/wer", wer, global_step)
-                            
-                            # Clean up
+                                avg_wer = wer
+         
+                            if rank == 0:
+                                print(f"Average WER on step {global_step}: {avg_wer}")
+                                if writer is not None:
+                                    writer.add_scalar("eval/avg_wer", avg_wer, global_step)
+         
+                            if warmup_complete:
+                                scheduler_plateau.step(avg_wer)
+
                             del preds, pred_str, label_str
                             if torch.cuda.is_available():
                                 torch.cuda.empty_cache()
 
                     global_step += 1
 
-                # Clean up batch resources
                 if logits is not None:
                     del logits
                 del labels, batch
@@ -732,7 +701,6 @@ def train_model(rank, world_size, args):
                 gc.collect()
                 continue
 
-        # Save checkpoint at end of epoch
         if rank == 0 and epoch % args.checkpoint_freq == 0:
             os.makedirs(args.model_save_dir, exist_ok=True)
             
@@ -741,24 +709,23 @@ def train_model(rank, world_size, args):
                 'adapter_state_dict': model.module.adapter.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss_value,
+                'scheduler_plateau_state_dict': scheduler_plateau.state_dict(),
             }
             
             torch.save(
                 checkpoint,
-                os.path.join(args.model_save_dir, f'checkpoint_{args.adapter_type}_epoch_{epoch}.pt')
+                os.path.join(args.model_save_dir, f'checkpoint_{args.adapter_type}_epoch_{epoch}_{datetime.now().strftime("%Y%m%d%H%M%S")}.pt')
             )
         dist.barrier()
 
-    # Save final model
     if rank == 0:
         torch.save({
                 'adapter_state_dict': model.module.adapter.state_dict(),
             },
-            os.path.join(args.model_save_dir, "adapter_final.pt")
+            os.path.join(args.model_save_dir, f"adapter_{args.adapter_type}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pt")
         )
     dist.barrier()
 
-    # Clean up resources
     if writer is not None:
         writer.close()
     if prof is not None:
@@ -787,7 +754,6 @@ def main():
     os.environ["OMP_NUM_THREADS"] = str(min(16, os.cpu_count()))
     os.environ["MKL_NUM_THREADS"] = str(min(16, os.cpu_count()))
     
-    # Set offline mode
     if args.local_files_only:
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
         os.environ["HF_DATASETS_OFFLINE"] = "1"
@@ -795,25 +761,20 @@ def main():
         os.environ.pop("TRANSFORMERS_OFFLINE", None)
         os.environ.pop("HF_DATASETS_OFFLINE", None)
         
-    # Save token for authentication
     HfFolder.save_token(args.token)
 
     print(f"Use local files only: {args.local_files_only}")
 
-    # Create directories
     os.makedirs(args.model_save_dir, exist_ok=True)
     os.makedirs(args.log_dir, exist_ok=True)
     # os.makedirs(args.cache_dir, exist_ok=True)
 
-    # Check CUDA availability
     if not torch.cuda.is_available():
         print("CUDA is not available. Running on CPU.")
 
-    # Set up multi-GPU training
     world_size = torch.cuda.device_count() if torch.cuda.is_available() else 1
     print(f"Running on {world_size} GPUs")
 
-    # Run with process spawning for multi-GPU or directly for single GPU/CPU
     if world_size > 1:
         mp.spawn(
             train_model,
@@ -826,6 +787,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # Set start method for multiprocessing - 'spawn' is more compatible across platforms
     mp.set_start_method('spawn', force=True)
     main()
