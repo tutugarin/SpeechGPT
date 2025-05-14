@@ -1,0 +1,72 @@
+[
+  {
+    "data": {
+      "prompt": "What is the capital of Japan?",
+      "answer1": "Tokyo",
+      "answer2": "Seoul"
+    }
+  },
+  {
+    "data": {
+      "prompt": "Who wrote 'Romeo and Juliet'?",
+      "answer1": "William Shakespeare",
+      "answer2": "Charles Dickens"
+    }
+  },
+  {
+    "data": {
+      "prompt": "What is the largest planet in the Solar System?",
+      "answer1": "Jupiter",
+      "answer2": "Saturn"
+    }
+  },
+  {
+    "data": {
+      "prompt": "What is the capital of Brazil?",
+      "answer1": "Brasília",
+      "answer2": "Rio de Janeiro"
+    }
+  },
+  {
+    "data": {
+      "prompt": "What is the chemical symbol for gold?",
+      "answer1": "Au",
+      "answer2": "Ag"
+    }
+  },
+  {
+    "data": {
+      "prompt": "Who painted the 'Mona Lisa'?",
+      "answer1": "Leonardo da Vinci",
+      "answer2": "Michelangelo"
+    }
+  },
+  {
+    "data": {
+      "prompt": "What is the capital of Canada?",
+      "answer1": "Ottawa",
+      "answer2": "Toronto"
+    }
+  },
+  {
+    "data": {
+      "prompt": "In which year did the first human spaceflight occur?",
+      "answer1": "1961",
+      "answer2": "1957"
+    }
+  },
+  {
+    "data": {
+      "prompt": "What is the main ingredient in hummus?",
+      "answer1": "Chickpeas",
+      "answer2": "Lentils"
+    }
+  },
+  {
+    "data": {
+      "prompt": "Who invented the telephone?",
+      "answer1": "Alexander Graham Bell",
+      "answer2": "Thomas Edison"
+    }
+  }
+]

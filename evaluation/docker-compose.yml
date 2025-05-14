@@ -1,0 +1,16 @@
+services:
+  label-studio:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/label-studio/projects/sbs-comparison/data
+      - ./config.xml:/label-studio/projects/sbs-comparison/config.xml
+    environment:
+      LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED: "true"
+      LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT: "/label-studio/projects/sbs-comparison/data"
+      LABEL_STUDIO_BASE_DATA_DIR: "/label-studio/projects/sbs-comparison/data"
+      LABEL_STUDIO_USERNAME: "admin@admin.com"
+      LABEL_STUDIO_PASSWORD: "admin"
+    entrypoint: ["bash", "/label-studio/projects/sbs-comparison/entrypoint.sh"]
+
