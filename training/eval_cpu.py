@@ -62,12 +62,14 @@ def collate_fn(batch, asr_proc, llm_tok, max_dur, max_len):
                             padding="max_length", truncation=True,
                             return_tensors="pt")
 
-    prompt_raw = [x['text_prompt'] for x in batch]
+    # prompt_raw = [x['text_prompt'] for x in batch]
+    prompt_raw = [f"{asr_proc.tokenizer.eos_token}{x['text_prompt']}" for x in batch]
     txt_in = llm_tok(prompt_raw, max_length=max_len,
                      padding="max_length", truncation=True,
                      return_tensors="pt")
 
-    ref_raw = [x['text_response'] for x in batch]
+    # ref_raw = [x['text_response'] for x in batch]
+    ref_raw = [f"{asr_proc.tokenizer.eos_token}{x['text_response']}" for x in batch]
     txt_out = llm_tok(ref_raw, max_length=max_len,
                       padding="max_length", truncation=True,
                       return_tensors="pt")
